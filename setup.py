@@ -25,6 +25,10 @@ package_data = {
     'gimmik': ['kernels/*.mako'],
 }
 
+modules = [
+    'gimmik',
+]
+
 # Hard dependencies
 install_requires = [
     'mako',
