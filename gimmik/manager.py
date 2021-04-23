@@ -144,6 +144,8 @@ class BaseManager(object):
 
             self._write_state_heading(f, f'Shared Memory: {j}', level=0)
             f.write(f'Shared Max Size = {shr.size}\n')
+            nallocated = len(shr.high.addr) + len(shr.med.addr) + len(shr.low.addr)
+            f.write(f'Total Allocated: {nallocated} ({nallocated*100/shr.size}%)\n')
 
             f.write('\n')
             self._write_state_heading(f, 'Shared Memory, High Priority Partition', level=1)

@@ -6,6 +6,20 @@
    Methodology of planar 3d, but with managed memory
 */ 
 
+/* CONFIG DETAILS
+  DATA TYPE             = ${dtype}
+
+  P (POINTS PER LINE)   = ${p-1} (${p})
+  NVARS                 = ${nvars}
+  FLUX                  = ${flux_n}
+  
+  SOASZ                 = ${soasz}
+  WARP SIZE             = ${warp_size}
+  TOTAL SHARED SIZE (B) = ${shr_size}
+  SHARED VALS PER ELEM  = ${shr_size_elem}
+*/
+
+
 #define SOA_IDX(i, v) ((((i) / ${soasz})*${nvars} + (v))*${soasz} + (i) % ${soasz})
 
 #define ELEM_K(t) (((t) % ${warp_size}) % ${p})
