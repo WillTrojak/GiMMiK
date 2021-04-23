@@ -29,7 +29,6 @@ class Planar3dMemoryManger(BaseManager):
         self.glb.insert(0, glb_mem)
         self.glb.insert(1, glb_out_mem)
         self.share.insert(0, shr_mem)
-        #self.share.insert(1, shrd_mem)
         self.local.insert(0, lclx_mem)
         self.local.insert(1, lcly_mem)
         
@@ -109,7 +108,7 @@ class Plane3d(object):
                         q = self.mem.variable_map(idx, thread_dim=2)
                         jac = ['ze','1.','ze']
                         flux = self.flux.build_flux(q, v, jac)
-                        mat = self.A.matrix_value(i, y_line)
+                        mat = self.A.matrix_value(y_line, i)
                         acc_yz += f'+({mat}*{flux})'
 
                         # z-line
@@ -117,7 +116,7 @@ class Plane3d(object):
                         q = self.mem.variable_map(idx)
                         jac = ['ze','ze','1.']
                         flux = self.flux.build_flux(q, v, jac)
-                        mat = self.A.matrix_value(i, self.thrd_v)
+                        mat = self.A.matrix_value(self.thrd_v, i)
                         acc_yz += f'+({mat}*{flux})'
 
                     source += self.mem.accumulate(self.mem.acc_reg, v, acc_yz[1:])
