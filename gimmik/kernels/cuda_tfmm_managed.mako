@@ -26,7 +26,8 @@
 #define WARP(t) ((t)/${warp_size})
 #define ATHRD (${warp_size} - ${warp_size} % ${p})
 #define ABS_E(t, b, bx) ((b)*(ATHRD / ${p})*(bx / 32) + WARP(t)*(ATHRD / ${p}) + ((t) % ${warp_size}) / ${p})
-#define LCL_E(t) (WARP(t)*(ATHRD / ${p}) + ((t) % ${warp_size}) / ${p}) 
+#define LCL_E(t) (WARP(t)*(ATHRD / ${p}) + ((t) % ${warp_size}) / ${p})
+#define W_MASK(t) (((1 << ${p}) - 1) << (${p}*(((t) % ${warp_size}) / ${p})))
 
 __global__ void
 ${funcn}(int n,
@@ -37,6 +38,8 @@ ${funcn}(int n,
     // Memory common 
     int eg = ((threadIdx.x % ${warp_size}) < ATHRD) ? ABS_E(threadIdx.x, blockIdx.x, blockDim.x) : n; // element No. in global frame
     int el_offset = ${shr_size_elem}*LCL_E(threadIdx.x);
+    unsigned mask = W_MASK(threadIdx.x); // warp sync mask
+    int thrd_k = ELEM_K(threadIdx.x);  // z-plane evaluated by thread
 
     ${dtype} ze = ${0.};
 
@@ -52,8 +55,6 @@ ${funcn}(int n,
     // n is now number of elements
     if (eg < n)
     {
-        int thrd_k = ELEM_K(threadIdx.x);  // z-plane evaluated by thread
-
         ${gen.plane_method_3d(A=A, elem='eg', p=p, nvars=nvars, flux_func=flux_n, 
                               shr_size=shr_size_elem,
                               thrd_v='thrd_k', ldi='ldb', ldo='ldc',
@@ -68,3 +69,4 @@ ${funcn}(int n,
 #undef ATHRD
 #undef ABS_E
 #undef LCL_E
+#undef W_MASK

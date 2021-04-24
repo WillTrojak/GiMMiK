@@ -121,7 +121,7 @@ class Plane3d(object):
 
                     source += self.mem.accumulate(self.mem.acc_reg, v, acc_yz[1:])
 
-                    source += self.mem.glb[0].global_write(self.mem.acc_reg.point(v), 
+                    source += self.mem.glb[1].global_write(self.mem.acc_reg.point(v), 
                         self.mem.glb[1].point(v, x_const=yz_plane+y_line*self.p,
                              thread_dim=2))
 
@@ -132,7 +132,7 @@ class Plane3d(object):
 
     @new_line
     def _add_warp_sync(self):
-        return '__syncwarp();'
+        return '__syncwarp(mask);'
 
     @new_line
     def _read_x_point(self, x, y, priority):
