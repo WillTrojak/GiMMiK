@@ -17,11 +17,12 @@ import gimmik.generator
 import gimmik.hyperns
 import gimmik.linear
 from gimmik.matrix import GimmikMatrix, c_register
+from gimmik.memory import GlobalMemory, LocalMemory, SharedMemory, RegisterMemory
+from gimmik.methods import Planar3dMemoryManger
 import gimmik.methods
-import gimmik.utils
+from gimmik.utils import BlockConfig
 
 class GimmikConfig:
-
     def __init__(self, platform, dtype, maxlen=None):
         
         # Platform language base
@@ -187,42 +188,53 @@ def generate_tfmm(D, ndims, nvars, dtype, block_dim, soasz, platform, flux,
 
     return cfg.cleanup(src)
 
-def generate_tfmm_managed(mat, ndims, nvars, dtype, block_dim, soasz, platform,
-                  flux, shared_max=None, warp_size=32, funcn='gimmik_tfmm', maxlen=None,
-                  tplargs=None):
+def generate_tfmm_managed(mat, ndims, nvars, dtype, soasz, platform,
+                  flux, block_dim, ufc_size, shared_max=None, warp_size=32, 
+                  funcn='gimmik_tfmm', maxlen=None, tplargs=None):
+
     if tplargs is None:
         tplargs = {}
 
-    #if platform.find('cuda') == -1:
-    #    raise ValueError(f'Gimmik: tfmm managed only supported with CUDA platforms')
-
+    # Config some of the gimmik parts
     cfg = GimmikConfig(platform, dtype, maxlen)
 
+    # OP matrix config
     (p, k) = np.shape(mat)
     A = GimmikMatrix(mat, cfg.dtype)
 
-    warps = math.floor(block_dim/warp_size)
-    active_threads = warps*p*math.floor(warp_size/p)
-    print(warps,active_threads)
-
+    # Some error checking on shared memeory
+    active_threads = int(block_dim/warp_size)*p*int(warp_size/p)
     if shared_max is None:
-        shared_size = p*nvars*active_threads
+        shared_max = p*nvars*active_threads*cfg.bytes
     else:
         if shared_max < cfg.bytes*p*active_threads*nvars:
             raise ValueError(f'GiMMiK: insufficent shared memory given')
-        shared_size = math.floor(shared_max/cfg.bytes)
 
-    shared_size_elem = math.floor(p*shared_size/active_threads)
+    # GPU block configuration
+    block_config = BlockConfig(p, block_dim, ufc_size, shared_max, cfg.bytes*8, warp_size)
 
+    # Setup Memory Space
+    glb_mem = GlobalMemory('b', 'eg', p, nvars, 'thrd_k', 'ldb', 'SOA_IDX')
+    glb_out_mem = GlobalMemory('c', 'eg', p, nvars, 'thrd_k', 'ldc', 'SOA_IDX')
+    shr_mem = SharedMemory('bsd', p, nvars, 'el_offset', 'thrd_k', size=block_config.shr_size_elem)
+    lcly_mem = LocalMemory('bly', p, nvars, size=p*nvars)
+    lclx_mem = LocalMemory('blx', p, nvars, size=nvars)
+    acc_reg = RegisterMemory('accl', size=nvars, rid='acc')
+
+    mem = Planar3dMemoryManger(glb_mem, glb_out_mem, shr_mem, lcly_mem, lclx_mem, acc_reg)
+
+    fargs = {'ndims': ndims, 'ac-zeta': 2.5, 'nu': 1e-3, 'tr': 1e-3, 'a': [1,1,1]}
+
+    # Make src
     tplargs.update({'A': A, 'ndims': ndims, 'p': p, 'nvars': nvars, 
-                    'shr_size': shared_size, 
-                    'shr_size_elem': shared_size_elem,
-                    'soasz': soasz, 'warp_size': warp_size, 'dtype': cfg.dtype, 
-                    'flux_n': flux, 'funcn': funcn})
+                    'bcfg': block_config, 'mem': mem,
+                    'soasz': soasz, 'dtype': cfg.dtype,
+                    'flux_n': flux, 'funcn': funcn, 'fargs': fargs, 'ldst_opt':False})
 
     tpl = pkgutil.get_data(__name__, f'kernels/{platform}.mako')
     src = Template(tpl).render(**tplargs)
 
+    # cleanup and return
     return cfg.cleanup(src)
 
 def _issuported(platform, support, funcn):

@@ -48,8 +48,10 @@ class Planar3dMemoryManger(BaseManager):
 
 
 class Plane3d(object):
-    def __init__(self, A, p, nvars, ndims, thrd_v, mem, flux_func, fargs):
+    def __init__(self, block_config, A, p, nvars, ndims, thrd_v, mem, flux_func, fargs):
         self.src = ''
+
+        self.block_config = block_config
 
         self.A = A
         
@@ -66,14 +68,17 @@ class Plane3d(object):
 
         self.flux = select_flux(flux_func, ndims, fargs)
 
-    def build(self, mem_debug=False):
+
+    def build_base(self, mem_debug):
         source = self.src
 
         for yz_plane in range(self.p):
-            source += self.mem.write_state(note=f'Top of plane loop, before read, yz_plane={yz_plane}')
+            if mem_debug:
+                source += self.mem.write_state(note=f'Top of plane loop, before read, yz_plane={yz_plane}')
             source += self._read_y_line(yz_plane)
             source += self._read_yz_plane(yz_plane)
-            source += self.mem.write_state(note=f'Top of plane loop, after read, yz_plane={yz_plane}')
+            if mem_debug:
+                source += self.mem.write_state(note=f'Top of plane loop, after read, yz_plane={yz_plane}')
 
             # y-line loop
             for y_line in range(self.p):
@@ -93,8 +98,8 @@ class Plane3d(object):
                         acc = f'{mat}*{flux}'
                         source += self.mem.accumulate(self.mem.acc_reg, v, acc)
 
-                source += self.mem.write_state(note=f'After x loop, y_line={y_line}, yz_plane={yz_plane}')
-
+                if mem_debug:
+                    source += self.mem.write_state(note=f'After x loop, y_line={y_line}, yz_plane={yz_plane}')
 
                 source += self._add_warp_sync()
 
@@ -127,8 +132,18 @@ class Plane3d(object):
 
             if yz_plane != self.p:
                 self._yz_plane_priority(yz_plane, yz_plane+1)
-        self.src = source
+
         return source
+
+    def build(self, ldst_opt=False, mem_debug=False):
+        self.src = self.build_base(mem_debug)
+
+        if ldst_opt:
+            self.post_ld = LoadOptimisation(self.block_config, self.mem.glb[0].name)
+            self.src = self.post_ld.apply(self.src)
+
+        return self.src
+
 
     @new_line
     def _add_warp_sync(self):

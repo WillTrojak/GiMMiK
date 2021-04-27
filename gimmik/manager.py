@@ -130,8 +130,8 @@ class BaseManager(object):
 
     # For debugging
     def write_state(self, note=None):
-        filename = f'mem_state_{self.state_count}.txt'
-        f = open(filename, 'w')
+        filename = f'mem_state_{self.state_count}'
+        f = open(filename+'.txt', 'w')
         
         self._write_state_heading(f, f'GiMMik Memory Manager, Memory State: {self.state_count}', level=0)
         f.write('(x, v, address)\n')
