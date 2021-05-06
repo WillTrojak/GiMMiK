@@ -8,7 +8,7 @@ def c_register(context, A, name='mat'):
     A.name = name
     (A.n, A.m) = np.shape(A.mat)
 
-    source = f'{A.mtype} {name}[{A.n*A.m}] = '
+    source = f'__constant__ {A.mtype} {name}[{A.n*A.m}] = '
     source += '{'
 
     for j in range(A.m):

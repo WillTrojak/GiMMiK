@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 class BaseManager(object):
-    def __init__(self):
+    def __init__(self, opargs):
         
         self.state_count = 0
         
@@ -11,6 +11,11 @@ class BaseManager(object):
         self.n_share = 0
         self.share = []
         self.glb = [] # glb[0] is input memory, glb[1] is output memory.
+
+        self.opargs = {}
+        self.opargs['shr_op_order'] = 'grs'
+        self.opargs.update(opargs)
+
 
     def set_shr_priority(self, priority, v, x_const, thread_dim=None):
         in_share = [shr.is_stored(v, x_const, thread_dim) for shr in self.share]
@@ -71,14 +76,26 @@ class BaseManager(object):
             # Oportunistic Shared Store
             if not any(in_shared) and not shr_bypass:
                 source += self.read_to_shared(priority, v, x_const, thread_dim, dst)
-        elif mem.is_shared() or mem.is_global():
+        elif mem.is_shared():
             src = mem.point(v, x_const, thread_dim)
             dst = lcl.new_local_dst(v, x_const, thread_dim)
+
             source += lcl.copy_to_local(src, dst)
 
-            # Oportunistic Shared Store
-            if not any(in_shared) and not shr_bypass:
-                source += self.read_to_shared(priority, v, x_const, thread_dim, dst)
+        elif mem.is_global():
+            src = mem.point(v, x_const, thread_dim)
+
+            if self.opargs['shr_op_order'] == 'grs':
+                dst = lcl.new_local_dst(v, x_const, thread_dim)
+                source += lcl.copy_to_local(src, dst)
+                if not any(in_shared) and not shr_bypass:
+                    source += self.read_to_shared(priority, v, x_const, thread_dim, dst)
+            elif self.opargs['shr_op_order'] == 'gsr':
+                if not any(in_shared) and not shr_bypass:
+                    source += self.read_to_shared(priority, v, x_const, thread_dim, src)
+                    src = self.location(v, x_const, thread_dim)
+                dst = lcl.new_local_dst(v, x_const, thread_dim)                
+                source += lcl.copy_to_local(src, dst)
 
         return source
 
