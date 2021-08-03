@@ -7,6 +7,7 @@ import pkgutil
 import re
 
 from gimmik._version import __version__
+from gimmik.test import default_cfg, get_tester
 
 
 class GimmikConfig(object):
@@ -99,3 +100,38 @@ def generate_mm_split(mat, dtype, platform, block_dim, split, alpha=1.0,
     src = Template(tpl).render(**tplargs)
 
     return cfg.cleanup(src)
+
+def profile_generated(mat, dtype, src, platform, **kwargs):
+    cfg = default_cfg(dtype, **kwargs)
+    tester = get_tester(platform, cfg)
+
+    return tester.mul_profile(src, mat)
+
+def profile_cublas(mat, dtype, alpha=1., beta=0.):
+    cfg = default_cfg(dtype)
+
+    tester = get_tester('cuda', cfg)
+    return tester.mul_cublas_profile(mat, alpha, beta)
+
+def profile_rocblas(mat, dtype, alpha=1., beta=0.):
+    cfg = default_cfg(dtype)
+
+    tester = get_tester('hip', cfg)
+    return tester.mul_rocblas_profile(mat, alpha, beta)
+
+def optimise_block_dim(mat, dtype, src, platform, max_size=1024):
+    if platform not in ['cuda', 'hip']:
+        raise ValueError('Invalid platform for block size optimisation')
+    
+    cfg = default_cfg(dtype)
+    tester = get_tester(platform, cfg)
+    soasz = tester.backend.soasz
+
+    runtime = []
+    for i in range(1, int(max_size/soasz)):
+        threads = i*soasz
+
+        tester.cfg.set('gimmik-profile', 'block_dim', threads)
+        runtime.append(tester.mul_profile(src, mat)['runtime'])
+
+    return (runtime.index(min(runtime)) + 1)*soasz

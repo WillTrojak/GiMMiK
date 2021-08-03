@@ -20,6 +20,11 @@ if vsrch:
 else:
     print('Unable to find a version string in gimmik/_version.py')
 
+# Modules
+modules = [
+    'gimmik.test',
+]
+
 # Data
 package_data = {
     'gimmik': ['kernels/*.mako'],
@@ -27,8 +32,8 @@ package_data = {
 
 # Hard dependencies
 install_requires = [
-    'mako',
-    'numpy >= 1.7'
+    'mako >= 1.0.0',
+    'numpy >= 1.7',
 ]
 
 # Info
@@ -52,7 +57,7 @@ setup(name='gimmik',
       version=version,
 
       # Packages
-      packages=['gimmik'],
+      packages=['gimmik'] + modules,
       package_data=package_data,
       install_requires=install_requires,
 
