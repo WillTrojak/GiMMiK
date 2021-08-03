@@ -91,7 +91,8 @@ def generate_mm_split(mat, dtype, platform, block_dim, split, alpha=1.0,
 
     # Template arguments
     tplargs = {'dtype': dtype, 'mat': mat, 'beta': beta, 'funcn': funcn,
-               'block_dim': block_dim, 'row_per_warp': row_per_warp}
+               'block_dim': block_dim, 'row_per_warp': row_per_warp,
+               'split': split}
 
     # Load and render the template
     tpl = pkgutil.get_data(__name__, 'kernels/{0}.mako'.format(platform))
