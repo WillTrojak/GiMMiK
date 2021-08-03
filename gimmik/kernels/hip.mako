@@ -9,7 +9,7 @@ ${funcn}(int n,
          const ${dtype}* __restrict__ b, int ldb,
          ${dtype}* __restrict__ c, int ldc)
 {
-    int i = blockDim.x*blockIdx.x + threadIdx.x;
+    int i = hipBlockDim_x*hipBlockIdx_x + hipThreadIdx_x;
     ${dtype} dotp;
 
     if (i < n)

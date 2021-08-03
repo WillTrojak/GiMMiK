@@ -1,38 +1,79 @@
 # -*- coding: utf-8 -*-
 
+import numpy as np
+from mako.template import Template
+from math import ceil
 import pkgutil
 import re
-
-from mako.template import Template
-import numpy as np
 
 from gimmik._version import __version__
 
 
-def generate_mm(mat, dtype, platform, alpha=1.0, beta=0.0, funcn='gimmik_mm'):
-    # Data type
-    dtype = np.dtype(dtype).type
-    if dtype == np.float32:
-        dtype = 'float'
-    elif dtype == np.float64:
-        dtype = 'double'
-    else:
-        raise ValueError('Invalid floating point data type')
+class GimmikConfig(object):
+    def __init__(self, platform, dtype, maxlen=None):
+
+        self._types = {np.float32: ( 'float','f'), np.float64: ('double', '')}
+
+        self._type_size = {np.float64: 8, np.float32: 4}
+
+        self.platform = platform
+
+        self.cchar = ''
+        self.maxlen = maxlen
+        
+        self.dtype = np.dtype(dtype).type
+        self.bytes = self._type_size[dtype]
+
+        # np type to language specific types
+        try:
+            (self.dtype, self.suffix) = self._types[dtype]
+        except KeyError:
+            raise ValueError('GiMMiK: Invalid floating point data type')
+        
+    def cleanup(self, src):
+        # Append suffix to handle typing
+        src = re.sub(r'(?=\d*[.eE])(?=\.?\d)\d*\.?\d*(?:[eE][+-]?\d+)?',
+                     rf'\g<0>{self.suffix}', src)
+
+        # Split lines to enforce line length max (needed for F90-F08 ISO)
+        if self.maxlen is not None:
+            src = self._line_split(src)
+
+        return src
+
+    def _line_split(self, src):
+        lines = src.splitlines()
+
+        src = ''
+        for line in lines:
+            nidnt = len(line) - len(line.lstrip(' '))
+            
+            while ceil(len(line)/self.maxlen) > 1:
+                ns = max(line[:self.maxlen].rfind('+ '),
+                         line[:self.maxlen].rfind('- '))
+                src += line[:ns] + self.cchar + '\n'
+                line = nidnt*' ' + line[ns:]
+
+            src += line + '\n'
+
+        return src
+
+
+def generate_mm(mat, dtype, platform, alpha=1.0, beta=0.0, funcn='gimmik_mm',
+                maxlen=None, block_dim=None):
+    
+    cfg = GimmikConfig(platform, dtype, maxlen)
 
     # Multiply the matrix through by alpha
     mat = alpha*mat
 
     # Template arguments
-    tplargs = {'dtype': dtype, 'mat': mat, 'beta': beta, 'funcn': funcn}
+    tplargs = {'dtype': dtype, 'mat': mat, 'beta': beta, 'funcn': funcn,
+               'block_dim': block_dim}
 
     # Load and render the template
     tpl = pkgutil.get_data(__name__, 'kernels/{0}.mako'.format(platform))
     src = Template(tpl).render(**tplargs)
 
-    # At single precision suffix all floating point constants by 'f'
-    if dtype == 'float':
-        src = re.sub(r'(?=\d*[.eE])(?=\.?\d)\d*\.?\d*(?:[eE][+-]?\d+)?',
-                     r'\g<0>f', src)
-
     # Return the source
-    return src
+    return cfg.cleanup(src)
