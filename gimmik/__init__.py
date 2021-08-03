@@ -69,7 +69,7 @@ def generate_mm(mat, dtype, platform, alpha=1.0, beta=0.0, funcn='gimmik_mm',
     mat = alpha*mat
 
     # Template arguments
-    tplargs = {'dtype': dtype, 'mat': mat, 'beta': beta, 'funcn': funcn,
+    tplargs = {'dtype': cfg.dtype, 'mat': mat, 'beta': beta, 'funcn': funcn,
                'block_dim': block_dim}
 
     # Load and render the template
@@ -91,7 +91,7 @@ def generate_mm_split(mat, dtype, platform, block_dim, split, alpha=1.0,
     row_per_warp = int(np.shape(mat)[0]/split)
 
     # Template arguments
-    tplargs = {'dtype': dtype, 'mat': mat, 'beta': beta, 'funcn': funcn,
+    tplargs = {'dtype': cfg.dtype, 'mat': mat, 'beta': beta, 'funcn': funcn,
                'block_dim': block_dim, 'row_per_warp': row_per_warp,
                'split': split}
 

@@ -14,7 +14,8 @@ from pyfr.util import subclass_where
 def get_tester(name, cfg):
     return subclass_where(BaseTest, name=name.lower())(name, cfg)
 
-def default_cfg(dtype, n_runs=30, block_dim=128, neles=4096, sync=False):
+def default_cfg(dtype, n_runs=30, block_dim=128, neles=4096, sync=False,
+                split=1):
     precision = {np.float32: 'single',
                  np.float64: 'double',
                 }
@@ -27,5 +28,6 @@ def default_cfg(dtype, n_runs=30, block_dim=128, neles=4096, sync=False):
         {block_dim=}
         {neles=}
         {sync=}
+        {split=}
     '''
     return Inifile(cfg_str)

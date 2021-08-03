@@ -21,8 +21,10 @@ class CUDATest(BaseTest):
 
         # Determine the grid/block
         block_dim = self.cfg.getint('gimmik-profile', 'block_dim', 128)
+        split = self.cfg.getint('gimmik-profile', 'split', 1)
+        
         block = (block_dim, 1, 1)
-        grid = get_grid_for_block(block, b.ncol)
+        grid = get_grid_for_block((int(block[0]/split), 1, 1), b.ncol)
 
         class GimmikKernel(object):
             def run_sync(iself):

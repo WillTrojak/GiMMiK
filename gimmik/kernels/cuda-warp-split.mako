@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 
-__global__
-__launch_bounds__(${block_dim})
-void
+__global__ __launch_bounds__(${block_dim}) void
 ${funcn}(int n,
          const ${dtype}* __restrict__ b, int ldb,
          ${dtype}* __restrict__ c, int ldc)
@@ -27,7 +25,8 @@ ${funcn}(int n,
         % else:
             c[i + ${j}*ldc] = dotp + ${beta}*c[i + ${j}*ldc];
         % endif
-        % endfor
+
+        % endif
         % endfor
         }
     % endfor
