@@ -77,3 +77,24 @@ def generate_mm(mat, dtype, platform, alpha=1.0, beta=0.0, funcn='gimmik_mm',
 
     # Return the source
     return cfg.cleanup(src)
+
+def generate_mm_split(mat, dtype, platform, block_dim, split, alpha=1.0,
+                      beta=0.0, funcn='gimmik_mm', maxlen=None):
+
+    cfg = GimmikConfig(platform, dtype, maxlen)
+
+    # Multiply the matrix through by alpha
+    mat = alpha*mat
+
+    # Split config
+    row_per_warp = int(np.shape(mat)[0]/split)
+
+    # Template arguments
+    tplargs = {'dtype': dtype, 'mat': mat, 'beta': beta, 'funcn': funcn,
+               'block_dim': block_dim, 'row_per_warp': row_per_warp}
+
+    # Load and render the template
+    tpl = pkgutil.get_data(__name__, 'kernels/{0}.mako'.format(platform))
+    src = Template(tpl).render(**tplargs)
+
+    return cfg.cleanup(src)
