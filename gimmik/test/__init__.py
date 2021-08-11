@@ -15,7 +15,7 @@ def get_tester(name, cfg):
     return subclass_where(BaseTest, name=name.lower())(name, cfg)
 
 def default_cfg(dtype, n_runs=30, block_dim=128, neles=4096, sync=False,
-                split=1):
+                split=1, rep=1):
     precision = {np.float32: 'single',
                  np.float64: 'double',
                 }
@@ -29,5 +29,6 @@ def default_cfg(dtype, n_runs=30, block_dim=128, neles=4096, sync=False,
         {neles=}
         {sync=}
         {split=}
+        {rep=}
     '''
     return Inifile(cfg_str)

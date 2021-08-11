@@ -79,7 +79,8 @@ def generate_mm(mat, dtype, platform, alpha=1.0, beta=0.0, funcn='gimmik_mm',
     # Return the source
     return cfg.cleanup(src)
 
-def generate_mm_split(mat, dtype, platform, block_dim, split, alpha=1.0,
+
+def generate_mm_split(mat, dtype, platform, block_dim, split, rep=1, alpha=1.0,
                       beta=0.0, funcn='gimmik_mm', maxlen=None):
 
     cfg = GimmikConfig(platform, dtype, maxlen)
@@ -93,7 +94,7 @@ def generate_mm_split(mat, dtype, platform, block_dim, split, alpha=1.0,
     # Template arguments
     tplargs = {'dtype': cfg.dtype, 'mat': mat, 'beta': beta, 'funcn': funcn,
                'block_dim': block_dim, 'row_per_warp': row_per_warp,
-               'split': split}
+               'split': split, 'rep': rep}
 
     # Load and render the template
     tpl = pkgutil.get_data(__name__, 'kernels/{0}.mako'.format(platform))
@@ -101,11 +102,29 @@ def generate_mm_split(mat, dtype, platform, block_dim, split, alpha=1.0,
 
     return cfg.cleanup(src)
 
+
+def generate_mm_ptx(mat, dtype, sm, alpha=1.0, beta=0.0, funcn='gimmik_mm'):
+    
+    # Multiply the matrix through by alpha
+    mat = alpha*mat
+
+    # Template arguments
+    tplargs = {'dtype': dtype, 'mat': mat, 'beta': beta, 'funcn': funcn,
+               'sm': sm}
+
+    # Load template
+    tpl = pkgutil.get_data(__name__, 'kernels/{0}.mako'.format('cuda-ptx'))
+
+    # Render and return
+    return Template(tpl).render(**tplargs)
+    
+
 def profile_generated(mat, dtype, src, platform, **kwargs):
     cfg = default_cfg(dtype, **kwargs)
     tester = get_tester(platform, cfg)
 
     return tester.mul_profile(src, mat)
+
 
 def profile_cublas(mat, dtype, alpha=1., beta=0.):
     cfg = default_cfg(dtype)
@@ -113,11 +132,13 @@ def profile_cublas(mat, dtype, alpha=1., beta=0.):
     tester = get_tester('cuda', cfg)
     return tester.mul_cublas_profile(mat, alpha, beta)
 
+
 def profile_rocblas(mat, dtype, alpha=1., beta=0.):
     cfg = default_cfg(dtype)
 
     tester = get_tester('hip', cfg)
     return tester.mul_rocblas_profile(mat, alpha, beta)
+
 
 def optimise_block_dim(mat, dtype, src, platform, max_size=1024):
     if platform not in ['cuda', 'hip']:

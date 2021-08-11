@@ -23,6 +23,8 @@ else:
 # Modules
 modules = [
     'gimmik.test',
+    'gimmik.generate',
+    'gimmik.generate.ptx',
 ]
 
 # Data
