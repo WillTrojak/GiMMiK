@@ -228,6 +228,7 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
     def generate_mm_split(self, sm, M, beta, block_dim, split, rep, shr_max):
         src = ''
 
+        # Calculate how much shared is available per gang
         shr_size = int(int(shr_max/self.bsize)/int(block_dim/split))
         rows, cols = self.row_col_split(M, split, shr_size)
 
@@ -262,10 +263,33 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
             src += X.load_array_to_shared(j, S)
         src += self.bra_tgt(curr_tgt)
 
-        #Synchronise
+        # Synchronise
         src += self.bar_sync(0)
         
         # Do the dot product
+        curr_tgt = self.manager.new_target()
+        for j, row in enumerate(rows):
+            src += self.bra_tgt(curr_tgt)
+            curr_tgt = self.manager.new_target()
+            src += self.bra(P[j], curr_tgt)
+
+            for r in row:
+                X_idx = []
+                C = []
+                for i, x in enumerate(M[r,:]):
+                    if x != 0:
+                        C.append(x)
+                        X_idx.append(i)
+
+                if X_idx:
+                    X = PTXArrayValue(self.manager, f'f{self.dtype}', 'b', 'ib', 'ldb', X=X_idx)
+                    z = PTXArrayValue(self.manager, f'f{self.dtype}', 'c', 'ic', 'ldc', X=[r])
+                    Y = [PTXConstant(c, self.dtype) for c in C]
+
+                    src += self.const_dotp(X, Y, z, j, S=S)
+
+        src += self.bra_tgt(curr_tgt)
+
 
         # Add 'if (i < n)' jump point and finalise
         src += self.if_end(jp)

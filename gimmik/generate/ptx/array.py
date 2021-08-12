@@ -22,6 +22,7 @@ class PTXArrayShared(PTXProvider):
 
     def load_array(self, X, warp):
         src = ''
+
         for i in range(len(X.X)):
             x = (X.addr, X.i, X.X[i][0], X.ld, warp)
             j = X.X[i][0]
@@ -29,11 +30,11 @@ class PTXArrayShared(PTXProvider):
                 D = self.manager.loaded[x]
                 X.X[i] = (j, None, D.name)
             elif X.var_id(j) in self.map:
-                a = self.map(X.var_id(j))
+                a = self.map[X.var_id(j)]
                 d = self.manager.new_register(f'f{self.size}')
                 D = self.manager.regs[d]
 
-                self.manager.add_loaded(X.addr, X.i, X.X[i][0], self.ld, D, warp)
+                self.manager.add_loaded(X.addr, X.i, X.X[i][0], X.ld, D, warp)
                 src += self.ld_shared(D, f'{self.addr_l} + {a}')
         return src
 
