@@ -195,7 +195,7 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
 
         # Some registers and if block
         self.idx_regs()
-        jp = 'BLOCK0'
+        jp = 'RANGE'
         src = self.if_block(self.manager.misc_regs['p'],
                             self.manager.misc_regs['el'],
                             self.manager.misc_regs['n'],
@@ -231,17 +231,19 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
         shr_size = int(int(shr_max/self.bsize)/int(block_dim/split))
         rows, cols = self.row_col_split(M, split, shr_size)
 
+        # Allocate the idex registers in the manager
         self.idx_reg_split()
+
+        # if (i < n)
         jp = 'RANGE'
         src += self.if_block(self.manager.misc_regs['p'],
-                            self.manager.misc_regs['el'],
-                            self.manager.misc_regs['n'],
-                            op='ge', jp=jp)
+                             self.manager.misc_regs['el'],
+                             self.manager.misc_regs['n'],
+                             op='ge', jp=jp)
 
+        # Initialise the shared memory 
         self.manager.init_shared('bs', self.bsize, shr_max)
-
         S = PTXArrayShared(self.manager, f'f{self.dtype}', 'bs', 'bs_l', shr_size)
-
 
         # Set predicates for warps
         P = []
@@ -263,7 +265,10 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
         #Synchronise
         src += self.bar_sync(0)
         
-        src += self.if_end(jp=jp)
+        # Do the dot product
+
+        # Add 'if (i < n)' jump point and finalise
+        src += self.if_end(jp)
 
         src_p = self.func_prototype(sm, block_dim)
         src_h = self.header_split(shr_size, split)
