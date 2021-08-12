@@ -175,30 +175,10 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
         self.manager.new_misc_reg('tid_x', 'u32')
 
     def idx_reg_split(self):
-        self.manager.new_misc_reg('p', 'pred')
+        self.idx_regs()
         
-        self.manager.new_misc_reg('n', 'u32')
-        self.manager.new_misc_reg('el', 's32')
-        self.manager.new_misc_reg('el_a', 's64')
-
-        self.manager.new_misc_reg('b_a', 'u64')
-        self.manager.new_misc_reg('b', 'u64')
-        self.manager.new_misc_reg('c_a', 'u64')
-        self.manager.new_misc_reg('c', 'u64')
         self.manager.new_misc_reg('bs_l', 's32')
-
-        self.manager.new_misc_reg('ib', 's64')
-        self.manager.new_misc_reg('ic', 's64')
-        self.manager.new_misc_reg('ldb_a', 's32')
-        self.manager.new_misc_reg('ldc_a', 's32')
-        self.manager.new_misc_reg('ldb', 's64')
-        self.manager.new_misc_reg('ldc', 's64')
-
-        self.manager.new_misc_reg('ctaid_x', 'u32')
-        self.manager.new_misc_reg('ntid_x', 'u32')
-        self.manager.new_misc_reg('tid_x', 'u32')
         self.manager.new_misc_reg('warp_id', 's32')
-
 
     def if_block(self, reg, a, b, op, jp):
         src = f'setp.{op}.s32 {reg.name}, {a.name}, {b.name};\n'
