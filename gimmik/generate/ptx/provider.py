@@ -1,13 +1,23 @@
 # -*- coding: utf-8 -*-
 
 from gimmik.generate.ptx.memory import PTXConstant, PTXRegister
-
+from numbers import Number
+from math import log2
 
 class PTXProvider(object):
     def __init__(self) -> None:
         super().__init__()
 
         self.fma_mod = {'f32': 'rn.ftz', 'f64': 'rn'}
+
+    def _value(self, x):
+        if isinstance(x, PTXConstant):
+            X = x.valh
+        elif isinstance(x, PTXRegister):
+            X = x.name
+        else:
+            X = x
+        return X
 
     def bra(self, p, tgt):
         if p.type != 'pred':
@@ -42,38 +52,63 @@ class PTXProvider(object):
 
     def fma(self, z, a, b, c):
         # z = a*b + c
-        A = a.valh if isinstance(a, PTXConstant) else a.name
-        B = b.valh if isinstance(b, PTXConstant) else b.name
-        C = c.valh if isinstance(c, PTXConstant) else c.name
+        A = self._value(a)
+        B = self._value(b)
+        C = self._value(c)
         return f'fma.{self.fma_mod[z.type]}.{z.type} {z.name}, {A}, {B}, {C};\n'
 
     def iadd(self, d, a, b):
         # d = a + b
-        A = a.name if isinstance(a, PTXRegister) else a
-        B = b.name if isinstance(b, PTXRegister) else b
+        A = self._value(a)
+        B = self._value(b)
         return f'add.{d.type} {d.name}, {A}, {B};\n'
+
+    def idiv(self, d, a, b):
+        A = self._value(a)
+        B = self._value(b)
+        if isinstance(B, Number) and ((B & (B-1) == 0) and B != 0):
+            return self.shr(d, a, int(log2(B)))
+        else:
+            return f'div.{d.type} {d.name}, {A}, {B};\n'
 
     def imul(self, d, a, b, config='lo'):
         # d = a*b
-        A = a.name if isinstance(a, PTXRegister) else a
-        B = b.name if isinstance(b, PTXRegister) else b
+        A = self._value(a)
+        B = self._value(b)
         return f'mul.{config}.{d.type} {d.name}, {A}, {B};\n'
 
     def imad(self, d, a, b, c, config='lo'):
         # d = a*b + c
-        A = a.name if isinstance(a, PTXRegister) else a
-        B = b.name if isinstance(b, PTXRegister) else b
-        C = c.name if isinstance(c, PTXRegister) else c
-        return f'mad.{config}.{d.type} {d.name}, {A}, {B}, {C};\n'
+        A = self._value(a)
+        B = self._value(b)
+        C = self._value(c)
+
+        # Some optimisations
+        if (A == 0 or B == 0) and C == 0:
+            return self.mov(d, 0)
+        elif C == 0:
+            return self.imul(d, a, b, config)
+        elif A == 0 or B == 0:
+            return self.mov(d, c)
+        elif A == 1:
+            return self.iadd(d, b, c)
+        elif B == 1:
+            return self.iadd(d, a, c)
+        elif A == -1:
+            return self.isub(d, c, b)
+        elif B == -1:
+            return self.isub(d, c, a)
+        else:
+            return f'mad.{config}.{d.type} {d.name}, {A}, {B}, {C};\n'
 
     def isub(self, d, a, b):
         # d = a - b
-        A = a.name if isinstance(a, PTXRegister) else a
-        B = b.name if isinstance(b, PTXRegister) else b
+        A = self._value(a)
+        B = self._value(b)
         return f'sub.{d.type} {d.name}, {A}, {B};\n'
 
     def load(self, ltype, d, a, config=''):
-        A = a.name if isinstance(a, PTXRegister) else a
+        A = self._value(a)
         return f'ld.{ltype}.{config}{d.type} {d.name}, [{A}];\n'
 
     def ld_global(self, d, a, config=''):
@@ -83,19 +118,32 @@ class PTXProvider(object):
         return self.load('shared', d, a, config)
 
     def mov(self, d, v):
-        if isinstance(v, PTXConstant):
-            return f'mov.{d.type} {d.name}, {v.valh};\n'
-        elif isinstance(v, PTXRegister):
-            return f'mov.{d.type} {d.name}, {v.name};\n'
+        V = self._value(v)
+        return f'mov.{d.type} {d.name}, {V};\n'
 
     def mul(self, d, a, b):
-        A = a.valh if isinstance(a, PTXConstant) else a.name
-        B = b.valh if isinstance(b, PTXConstant) else b.name
+        A = self._value(a)
+        B = self._value(b)
         return f'mul.{self.fma_mod[d.type]}.{d.type} {d.name}, {A}, {B};\n'
 
+    def selp(self, d, a, b, p):
+        A = self._value(a)
+        B = self._value(b)
+        return f'selp.{d.type} {d.name}, {A}, {B}, {p.name};\n'
+
+    def setp(self, p, a, b, op):
+        A = self._value(a)
+        B = self._value(b)
+        return f'setp.{op}.{a.type} {p.name}, {A}, {B};\n'
+
+    def shr(self, d, a, b):
+        A = self._value(a)
+        B = self._value(b)
+        return f'shr.{d.type} {d.name}, {A}, {B};\n'
+
     def store(self, stype, a, s, config=''):
-        S = s.valh if isinstance(s, PTXConstant) else s.name
-        A = a.name if isinstance(a, PTXRegister) else a
+        A = self._value(a)
+        S = self._value(s)
         return f'st.{stype}.{config}{s.type} [{A}], {S};\n'
 
     def st_global(self, a, s, config=''):

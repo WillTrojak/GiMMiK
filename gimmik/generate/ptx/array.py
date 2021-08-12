@@ -4,18 +4,21 @@ from gimmik.generate.ptx import type_sizes
 from gimmik.generate.ptx.provider import PTXProvider
 
 class PTXArrayShared(PTXProvider):
-    def __init__(self, manager, type, addr, addr_l) -> None:
+    def __init__(self, manager, type, addr, addr_l, max_size) -> None:
         super().__init__()
 
         self.manager = manager
 
         self.type = type
         self.size = type_sizes[type]
+        self.bsize = int(self.size/8)
 
         self.addr = addr
         self.addr_l = addr_l
 
         self.map = {}
+        self.num = 0
+        self.max_size = max_size
 
     def load_array(self, X, warp):
         src = ''
@@ -34,10 +37,19 @@ class PTXArrayShared(PTXProvider):
                 src += self.ld_shared(D, f'{self.addr_l} + {a}')
         return src
 
-    def write_out(self, v, j, id):
-        self.map[id] = j
-        return self.st_shared(f'{self.addr_l.name} + {j}', v)
+    def new_shared(self):
+        num = self.num
+        self.num += 1
+        return num
 
+    def write_out(self, v, j, id):
+        self.map[id] = j*self.bsize
+        return self.st_shared(f'{self.addr_l} + {j*self.bsize}', v)
+
+    def write_out_new(self, v, id):
+        j = self.new_shared()
+        self.map[id] = j*self.bsize
+        return self.st_shared(f'{self.addr_l} + {j*self.bsize}', v)
 
 class PTXArrayValue(PTXProvider):
     def __init__(self, manager, type, addr, i, ld, X=None) -> None:
@@ -91,7 +103,7 @@ class PTXArrayValue(PTXProvider):
                 self.manager.add_loaded(self.addr, self.i, self.X[i][0], self.ld, D, warp)
                 src += self.ld_global(D, A, config='nc.')
 
-            src += S.write_out(D, j, self.var_id(j))
+            src += S.write_out_new(D, self.var_id(j))
         return src
 
     def var_id(self, j):

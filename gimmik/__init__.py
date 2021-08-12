@@ -103,14 +103,27 @@ def generate_mm_split(mat, dtype, platform, block_dim, split, rep=1, alpha=1.0,
     return cfg.cleanup(src)
 
 
-def generate_mm_ptx(mat, dtype, sm, alpha=1.0, beta=0.0, funcn='gimmik_mm'):
+def generate_mm_ptx(mat, dtype, sm, alpha=1.0, beta=0.0, funcn='gimmik_mm', 
+                    block_dim=None, split=None, rep=None, shr_max=None):
     
+    bytes = {np.float32: 4, np.float64: 8}
+
     # Multiply the matrix through by alpha
     mat = alpha*mat
 
+    # Splitting config
+    if split is not None :
+        if block_dim is None:
+            raise ValueError('GiMMiK: Split PTX requires block dim size')
+    
     # Template arguments
     tplargs = {'dtype': dtype, 'mat': mat, 'beta': beta, 'funcn': funcn,
-               'sm': sm}
+               'sm': sm, 'split': split, 'rep': rep, 'block_dim': block_dim,
+               'shr_max': shr_max}
+
+    # Splitting config
+    if split is not None and block_dim is None:
+        raise ValueError('GiMMiK: Split PTX requires block dim size')
 
     # Load template
     tpl = pkgutil.get_data(__name__, 'kernels/{0}.mako'.format('cuda-ptx'))

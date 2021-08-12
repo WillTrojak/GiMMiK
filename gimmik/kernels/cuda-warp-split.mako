@@ -13,7 +13,6 @@ ${funcn}(int n,
     int osb = (threadIdx.x/${32*split})*${gimmik.ncols(mat)};
     ${dtype} dotp;
     ${dtype} extern __shared__ bs[];
-    //${dtype} __shared__ bs[2];
 
     if (i < n)
     {
