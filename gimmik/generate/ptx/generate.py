@@ -45,31 +45,42 @@ class GimmikPTXFunction(PTXProvider):
 
         return src
 
+    def init_data_address(self):
+        src = f'''
+    ld.param.u32 n, [{self.name}_param_0];
+
+    ld.param.u64 b_a, [{self.name}_param_1];
+    cvta.to.global.u64 b, b_a;
+    ld.param.u64 c_a, [{self.name}_param_3];
+    cvta.to.global.u64 c, c_a;
+    mul.wide.s32 el_a, el, {self.bsize};
+    add.s64 ib, b, el_a;
+    add.s64 ic, c, el_a;
+
+    ld.param.s32 ldb_a, [{self.name}_param_2];
+    mul.wide.s32 ldb, ldb_a, {self.bsize};
+    ld.param.s32 ldc_a, [{self.name}_param_4];
+    mul.wide.s32 ldc, ldc_a, {self.bsize};
+    '''
+        return src
+
     def header(self):
         src = ''
 
         src += self.declare_regs()
+        
+        t = self.manager.misc_regs['tid_x']
+        nt = self.manager.misc_regs['ntid_x']
+        bl = self.manager.misc_regs['ctaid_x']
 
-        src += f'''
-mov.u32	ctaid_x, %ctaid.x;
-mov.u32	ntid_x, %ntid.x;
-mov.u32	tid_x, %tid.x;
-mad.lo.s32 el, ntid_x, ctaid_x, tid_x;
-ld.param.u32 n, [{self.name}_param_0];
+        src += self.mov(bl, '%ctaid.x')
+        src += self.mov(nt, '%ntid.x')
+        src += self.mov(t, '%tid.x')
 
-ld.param.u64 b_a, [{self.name}_param_1];
-cvta.to.global.u64 b, b_a;
-ld.param.u64 c_a, [{self.name}_param_3];
-cvta.to.global.u64 c, c_a;
-mul.wide.s32 el_a, el, {self.bsize};
-add.s64 ib, b, el_a;
-add.s64 ic, c, el_a;
+        el = self.manager.misc_regs['el']
+        src += self.imad(el, nt, bl, t)
 
-ld.param.s32 ldb_a, [{self.name}_param_2];
-mul.wide.s32 ldb, ldb_a, {self.bsize};
-ld.param.s32 ldc_a, [{self.name}_param_4];
-mul.wide.s32 ldc, ldc_a, {self.bsize};
-'''
+        src += self.init_data_address()
 
         return src
 
@@ -79,30 +90,22 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
         src += self.declare_shared()
         src += self.declare_regs()
 
-        src += f'''
-mov.u32	ctaid_x, %ctaid.x;
-mov.u32	ntid_x, %ntid.x;
-mov.u32	tid_x, %tid.x;
-mad.lo.s32 el, ntid_x, ctaid_x, tid_x;
-shr.s32 warp_id, tid_x, 5;
-ld.param.u32 n, [{self.name}_param_0];
+        t = self.manager.misc_regs['tid_x']
+        nt = self.manager.misc_regs['ntid_x']
+        bl = self.manager.misc_regs['ctaid_x']
+        w = self.manager.misc_regs['warp_id']
 
-ld.param.u64 b_a, [{self.name}_param_1];
-cvta.to.global.u64 b, b_a;
-ld.param.u64 c_a, [{self.name}_param_3];
-cvta.to.global.u64 c, c_a;
-mul.wide.s32 el_a, el, {self.bsize};
-add.s64 ib, b, el_a;
-add.s64 ic, c, el_a;
+        src += self.mov(bl, '%ctaid.x')
+        src += self.mov(nt, '%ntid.x')
+        src += self.mov(t, '%tid.x')
+        src += self.idiv(w, t, 32)
 
-ld.param.s32 ldb_a, [{self.name}_param_2];
-mul.wide.s32 ldb, ldb_a, {self.bsize};
-ld.param.s32 ldc_a, [{self.name}_param_4];
-mul.wide.s32 ldc, ldc_a, {self.bsize};
-'''
+        el = self.manager.misc_regs['el']
+        src += self.imad(el, nt, bl, t)
+
+        src += self.init_data_address()
 
         d = self.manager.misc_regs['bs_l']
-        t = self.manager.misc_regs['tid_x']
         src += self.idiv(d, t, 32*split)
         src += self.imul(d, d, n)
 
