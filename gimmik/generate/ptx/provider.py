@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from gimmik.generate.ptx.memory import PTXConstant, PTXRegister
+from gimmik.generate.ptx.utils import typein
 from numbers import Number
 from math import log2
 
@@ -18,6 +19,12 @@ class PTXProvider(object):
         else:
             X = x
         return X
+
+    @typein(['f32', 'f64'])
+    def add(self, d, a, b):
+        A = self._value(a)
+        B = self._value(b)
+        return f'add.{self.fma_mod[d.type]}.{d.type} {d.name}, {A}, {B};\n'
 
     def bra(self, p, tgt):
         if p.type != 'pred':
@@ -50,6 +57,7 @@ class PTXProvider(object):
     def convert_to_const(self, ri, ro):
         return self.convert_to('const', ri, ro)
 
+    @typein(['f32', 'f64'])
     def fma(self, z, a, b, c):
         # z = a*b + c
         A = self._value(a)
@@ -57,12 +65,14 @@ class PTXProvider(object):
         C = self._value(c)
         return f'fma.{self.fma_mod[z.type]}.{z.type} {z.name}, {A}, {B}, {C};\n'
 
+    @typein(['u16', 'u32', 'u64', 's16', 's32', 's64'])
     def iadd(self, d, a, b):
         # d = a + b
         A = self._value(a)
         B = self._value(b)
         return f'add.{d.type} {d.name}, {A}, {B};\n'
 
+    @typein(['u16', 'u32', 'u64', 's16', 's32', 's64'])
     def idiv(self, d, a, b):
         A = self._value(a)
         B = self._value(b)
@@ -71,12 +81,14 @@ class PTXProvider(object):
         else:
             return f'div.{d.type} {d.name}, {A}, {B};\n'
 
+    @typein(['u16', 'u32', 'u64', 's16', 's32', 's64'])
     def imul(self, d, a, b, config='lo'):
         # d = a*b
         A = self._value(a)
         B = self._value(b)
         return f'mul.{config}.{d.type} {d.name}, {A}, {B};\n'
 
+    @typein(['u16', 'u32', 'u64', 's16', 's32', 's64'])
     def imad(self, d, a, b, c, config='lo'):
         # d = a*b + c
         A = self._value(a)
@@ -101,6 +113,13 @@ class PTXProvider(object):
         else:
             return f'mad.{config}.{d.type} {d.name}, {A}, {B}, {C};\n'
 
+    @typein(['u16', 'u32', 'u64', 's16', 's32', 's64'])
+    def irem(self, d, a, b):
+        A = self._value(a)
+        B = self._value(b)
+        return f'rem.{d.type} {d.name}, {A}, {B};\n'
+
+    @typein(['u16', 'u32', 'u64', 's16', 's32', 's64'])
     def isub(self, d, a, b):
         # d = a - b
         A = self._value(a)
@@ -121,6 +140,7 @@ class PTXProvider(object):
         V = self._value(v)
         return f'mov.{d.type} {d.name}, {V};\n'
 
+    @typein(['f32', 'f64'])
     def mul(self, d, a, b):
         A = self._value(a)
         B = self._value(b)

@@ -40,28 +40,28 @@ class GimmikPTXFunction(PTXProvider):
                 src += self.fma(ACC[i % n_accum], y, self.manager.regs[X.X[i][2]],
                                 ACC[(i-1)%n_accum])
         
-        src += z.address_reg(0)
+        src += z.address_reg(0, warp)
         src += self.st_global(self.manager.regs[z.X[0][1]], ACC[0])
 
         return src
 
     def init_data_address(self):
         src = f'''
-    ld.param.u32 n, [{self.name}_param_0];
+ld.param.u32 n, [{self.name}_param_0];
 
-    ld.param.u64 b_a, [{self.name}_param_1];
-    cvta.to.global.u64 b, b_a;
-    ld.param.u64 c_a, [{self.name}_param_3];
-    cvta.to.global.u64 c, c_a;
-    mul.wide.s32 el_a, el, {self.bsize};
-    add.s64 ib, b, el_a;
-    add.s64 ic, c, el_a;
+ld.param.u64 b_a, [{self.name}_param_1];
+cvta.to.global.u64 b, b_a;
+ld.param.u64 c_a, [{self.name}_param_3];
+cvta.to.global.u64 c, c_a;
+mul.wide.s32 el_a, el, {self.bsize};
+add.s64 ib, b, el_a;
+add.s64 ic, c, el_a;
 
-    ld.param.s32 ldb_a, [{self.name}_param_2];
-    mul.wide.s32 ldb, ldb_a, {self.bsize};
-    ld.param.s32 ldc_a, [{self.name}_param_4];
-    mul.wide.s32 ldc, ldc_a, {self.bsize};
-    '''
+ld.param.s32 ldb_a, [{self.name}_param_2];
+mul.wide.s32 ldb, ldb_a, {self.bsize};
+ld.param.s32 ldc_a, [{self.name}_param_4];
+mul.wide.s32 ldc, ldc_a, {self.bsize};
+'''
         return src
 
     def header(self):
@@ -84,7 +84,7 @@ class GimmikPTXFunction(PTXProvider):
 
         return src
 
-    def header_split(self, n, split):
+    def header_split(self, n, split, rep):
         src = ''
 
         src += self.declare_shared()
@@ -94,20 +94,29 @@ class GimmikPTXFunction(PTXProvider):
         nt = self.manager.misc_regs['ntid_x']
         bl = self.manager.misc_regs['ctaid_x']
         w = self.manager.misc_regs['warp_id']
+        l = self.manager.misc_regs['lane_id']
 
         src += self.mov(bl, '%ctaid.x')
         src += self.mov(nt, '%ntid.x')
         src += self.mov(t, '%tid.x')
+        src += self.mov(l, '%laneid')
         src += self.idiv(w, t, 32)
 
         el = self.manager.misc_regs['el']
-        src += self.imad(el, nt, bl, t)
+        # el = rep*32*blockIdx.x + (threadIdx.x % 32) + 32*(threadIdx.x/(32*split));
+        src += self.idiv(el, t, 32*split)
+        src += self.imul(el, 32, el)
+        src += self.iadd(el, el, l)
+        src += self.imad(el, rep*32, bl, el)
 
         src += self.init_data_address()
 
-        d = self.manager.misc_regs['bs_l']
-        src += self.idiv(d, t, 32*split)
-        src += self.imul(d, d, n)
+        bs = self.manager.misc_regs['bs_l']
+        bs_a = self.manager.misc_regs['bs_a']
+        src += self.mov(bs_a, 'bs')
+        src += self.idiv(bs, t, 32*split)
+        src += self.imul(bs, bs, n)
+        src += self.iadd(bs, bs, bs_a)
 
         return src
 
@@ -181,7 +190,9 @@ class GimmikPTXFunction(PTXProvider):
         self.idx_regs()
         
         self.manager.new_misc_reg('bs_l', 's32')
+        self.manager.new_misc_reg('bs_a', 's32')
         self.manager.new_misc_reg('warp_id', 's32')
+        self.manager.new_misc_reg('lane_id', 's32')
 
     def if_block(self, reg, a, b, op, jp):
         src = f'setp.{op}.s32 {reg.name}, {a.name}, {b.name};\n'
@@ -223,7 +234,7 @@ class GimmikPTXFunction(PTXProvider):
         src += self.if_end(jp=jp)
 
         src_p = self.func_prototype(sm, block_dim)
-        src_h = self.header(sm)
+        src_h = self.header()
         src_f = self.footer()
 
         return src_p + '{\n' + src_h + src + src_f + '}\n'
@@ -275,6 +286,7 @@ class GimmikPTXFunction(PTXProvider):
             src += self.bra_tgt(curr_tgt)
             curr_tgt = self.manager.new_target()
             src += self.bra(P[j], curr_tgt)
+            src += f'// if(warp == {j})\n'
 
             for r in row:
                 X_idx = []
@@ -293,12 +305,14 @@ class GimmikPTXFunction(PTXProvider):
 
         src += self.bra_tgt(curr_tgt)
 
+        # Synchronise
+        src += self.bar_sync(1)
 
         # Add 'if (i < n)' jump point and finalise
         src += self.if_end(jp)
 
         src_p = self.func_prototype(sm, block_dim)
-        src_h = self.header_split(shr_size, split)
+        src_h = self.header_split(shr_size, split, rep)
         src_f = self.footer()
 
         return src_p + '{\n' + src_h + src + src_f + '}\n'
@@ -313,8 +327,6 @@ class GimmikPTXFunction(PTXProvider):
         for i in range(split):
             rows.append([x for x in range(r_per_s*i, r_per_s*(i+1))])
         rows[-1] += [i for i in range(r_per_s*split, np.shape(M)[0])]
-
-        print(n, np.shape(M)[1])
 
         if n < np.shape(M)[1]:
             for i in range(split):

@@ -78,7 +78,7 @@ class PTXArrayValue(PTXProvider):
                 D = self.manager.loaded[x]
                 self.X[i] = (j, None, D.name)
             else:
-                src += self.address_reg(i)
+                src += self.address_reg(i, warp)
                 (j, a, d) = self.X[i]
                 A = self.manager.regs[a]
                 D = self.manager.regs[d]
@@ -96,7 +96,7 @@ class PTXArrayValue(PTXProvider):
                 D = self.manager.loaded[x]
                 self.X[i] = (j, None, D.name)
             else:
-                src += self.address_reg(i)
+                src += self.address_reg(i, warp)
                 (j, a, d) = self.X[i]
                 A = self.manager.regs[a]
                 D = self.manager.regs[d]
