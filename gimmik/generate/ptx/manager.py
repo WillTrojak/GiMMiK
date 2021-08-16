@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from gimmik.generate.ptx.memory import PTXRegister
+from gimmik.generate.ptx.registers import select_reg
 
 
 class PTXManager(object):
@@ -14,10 +14,10 @@ class PTXManager(object):
 
         self.regs = {}
         self.misc_regs = {}
-        self._type_id = {'s8': 0, 's16': 0, 's32': 0, 's64': 0,
-                         'u8': 0, 'u16': 0, 'u32': 0, 'u64': 0,
+        self._type_id = {'s16': 0, 's32': 0, 's64': 0,
+                         'u16': 0, 'u32': 0, 'u64': 0,
                          'f32': 0, 'f64': 0,
-                         'b8': 0, 'b16': 0, 'b32': 0, 'b64': 0,
+                         'b16': 0, 'b32': 0, 'b64': 0,
                          'pred': 0,
                         }
 
@@ -38,7 +38,7 @@ class PTXManager(object):
         id = self._type_id[type] = self._type_id[type] + 1
         name = self.reg_name(type, id)
         
-        self.regs[name] = PTXRegister(name, type)
+        self.regs[name] = select_reg(type, name)
 
         return name
 
@@ -56,7 +56,7 @@ class PTXManager(object):
         return self.tgt_name(id)
 
     def new_misc_reg(self, name, type):
-        self.misc_regs[name] = PTXRegister(name, type)
+        self.misc_regs[name] = select_reg(type, name)
 
     def reg_name(self, type, number):
         return f'{self.mem_name}_{type}_{number}'

@@ -35,7 +35,7 @@ class PTXArrayShared(PTXProvider):
                 D = self.manager.regs[d]
 
                 self.manager.add_loaded(X.addr, X.i, X.X[i][0], X.ld, D, warp)
-                src += self.ld_shared(D, f'{self.addr_l} + {a}')
+                src += D.ld_shared(self.addr_l, c=a)
         return src
 
     def new_shared(self):
@@ -45,12 +45,12 @@ class PTXArrayShared(PTXProvider):
 
     def write_out(self, v, j, id):
         self.map[id] = j*self.bsize
-        return self.st_shared(f'{self.addr_l} + {j*self.bsize}', v)
+        return self.addr_l.st_shared(v, c=j*self.bsize)
 
     def write_out_new(self, v, id):
         j = self.new_shared()
         self.map[id] = j*self.bsize
-        return self.st_shared(f'{self.addr_l} + {j*self.bsize}', v)
+        return self.addr_l.st_shared(v, c=j*self.bsize)
 
 class PTXArrayValue(PTXProvider):
     def __init__(self, manager, type, addr, i, ld, X=None) -> None:
@@ -84,7 +84,7 @@ class PTXArrayValue(PTXProvider):
                 D = self.manager.regs[d]
 
                 self.manager.add_loaded(self.addr, self.i, self.X[i][0], self.ld, D, warp)
-                src += self.ld_global(D, A, config='nc.')
+                src += D.ld_global(A, cop='nc')
         return src
 
     def load_array_to_shared(self, warp, S: PTXArrayShared):
@@ -102,7 +102,7 @@ class PTXArrayValue(PTXProvider):
                 D = self.manager.regs[d]
 
                 self.manager.add_loaded(self.addr, self.i, self.X[i][0], self.ld, D, warp)
-                src += self.ld_global(D, A, config='nc.')
+                src += D.ld_global(A, cop='nc')
 
             src += S.write_out_new(D, self.var_id(j))
         return src
@@ -129,7 +129,7 @@ class PTXArrayValue(PTXProvider):
                     A2 = self.manager.regs[a2]
                     self.X[i] = (j, a2, v)
                     self.manager.addr_reg[(self.addr, j, warp)] = a2
-                    return self.iadd(A2, A, self.ld)
+                    return A2.add(A, self.ld)
                 elif k == 1 or k == 4:
                     self.X[i] = (j, self.manager.addr_reg[a], v)
                     return ''
@@ -138,11 +138,11 @@ class PTXArrayValue(PTXProvider):
                     A2 = self.manager.regs[a2]
                     self.X[i] = (j, a2, v)
                     self.manager.addr_reg[(self.addr, j, warp)] = a2
-                    return self.isub(A2, A, self.ld)
+                    return A2.sub(A, self.ld)
         
         a = self.manager.new_register(f's64')
         self.manager.addr_reg[(self.addr, j, warp)] = a
         self.X[i] = (j, a, v)
         A = self.manager.regs[a]
 
-        return self.imad(A, j, self.ld, self.i)
+        return A.mad(j, self.ld, self.i)

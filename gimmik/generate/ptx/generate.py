@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
 
-from gimmik.utils import ncols
 import numpy as np
-from math import ceil
 
 from gimmik.generate.ptx import type_sizes
 from gimmik.generate.ptx.array import PTXArrayShared, PTXArrayValue
+from gimmik.generate.ptx.constant import PTXConstant
 from gimmik.generate.ptx.manager import PTXManager
-from gimmik.generate.ptx.memory import PTXConstant
 from gimmik.generate.ptx.provider import PTXProvider
 
 
@@ -35,33 +33,51 @@ class GimmikPTXFunction(PTXProvider):
 
         for i, y in enumerate(Y):
             if i == 0:
-                src += self.mul(ACC[0], y, self.manager.regs[X.X[i][2]])
+                src += ACC[0].mul(y, self.manager.regs[X.X[i][2]])
             else:
-                src += self.fma(ACC[i % n_accum], y, self.manager.regs[X.X[i][2]],
+                src += ACC[i % n_accum].fma(y, self.manager.regs[X.X[i][2]],
                                 ACC[(i-1)%n_accum])
         
         src += z.address_reg(0, warp)
-        src += self.st_global(self.manager.regs[z.X[0][1]], ACC[0])
+        src += self.manager.regs[z.X[0][1]].st_global(ACC[(i-1) % n_accum])
 
         return src
 
     def init_data_address(self):
-        src = f'''
-ld.param.u32 n, [{self.name}_param_0];
+        src = ''
 
-ld.param.u64 b_a, [{self.name}_param_1];
-cvta.to.global.u64 b, b_a;
-ld.param.u64 c_a, [{self.name}_param_3];
-cvta.to.global.u64 c, c_a;
-mul.wide.s32 el_a, el, {self.bsize};
-add.s64 ib, b, el_a;
-add.s64 ic, c, el_a;
+        n = self.manager.misc_regs['n']
+        b_a = self.manager.misc_regs['b_a']
+        c_a = self.manager.misc_regs['c_a']
+        ldb_a = self.manager.misc_regs['ldb_a']
+        ldc_a = self.manager.misc_regs['ldc_a']
 
-ld.param.s32 ldb_a, [{self.name}_param_2];
-mul.wide.s32 ldb, ldb_a, {self.bsize};
-ld.param.s32 ldc_a, [{self.name}_param_4];
-mul.wide.s32 ldc, ldc_a, {self.bsize};
-'''
+        src += n.ld_param(f'[{self.name}_param_0]')
+        src += b_a.ld_param(f'[{self.name}_param_1]')
+        src += ldb_a.ld_param(f'[{self.name}_param_2]')
+        src += c_a.ld_param(f'[{self.name}_param_3]')
+        src += ldc_a.ld_param(f'[{self.name}_param_4]')
+
+        b = self.manager.misc_regs['b']
+        c = self.manager.misc_regs['c']
+        ib = self.manager.misc_regs['ib']
+        ic = self.manager.misc_regs['ic']
+        ldb = self.manager.misc_regs['ldb']
+        ldc = self.manager.misc_regs['ldc']
+
+        src += b.cvta_to(b_a, 'global')
+        src += c.cvta_to(c_a, 'global')
+
+        src += ldb.mul(ldb_a, self.bsize, config='wide', type='s32')
+        src += ldc.mul(ldc_a, self.bsize, config='wide', type='s32')
+
+        el_a = self.manager.misc_regs['el_a']
+        el = self.manager.misc_regs['el']
+
+        src += el_a.mul(el, self.bsize, config='wide', type='s32')
+        src += ib.add(b, el_a)
+        src += ic.add(c, el_a)
+
         return src
 
     def header(self):
@@ -78,7 +94,7 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
         src += self.mov(t, '%tid.x')
 
         el = self.manager.misc_regs['el']
-        src += self.imad(el, nt, bl, t)
+        src += el.mad(nt, bl, t)
 
         src += self.init_data_address()
 
@@ -96,34 +112,34 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
         w = self.manager.misc_regs['warp_id']
         l = self.manager.misc_regs['lane_id']
 
-        src += self.mov(bl, '%ctaid.x')
-        src += self.mov(nt, '%ntid.x')
-        src += self.mov(t, '%tid.x')
-        src += self.mov(l, '%laneid')
-        src += self.idiv(w, t, 32)
+        src += bl.mov('%ctaid.x')
+        src += nt.mov('%ntid.x')
+        src += t.mov('%tid.x')
+        src += l.mov('%laneid')
+        src += w.div(t, 32)
 
         el = self.manager.misc_regs['el']
         # el = rep*32*blockIdx.x + (threadIdx.x % 32) + 32*(threadIdx.x/(32*split));
-        src += self.idiv(el, t, 32*split)
-        src += self.imul(el, 32, el)
-        src += self.iadd(el, el, l)
-        src += self.imad(el, rep*32, bl, el)
+        src += el.div(t, 32*split)
+        src += el.mul(32, el)
+        src += el.add(el, l)
+        src += el.mad(rep*32, bl, el)
 
         src += self.init_data_address()
 
         bs = self.manager.misc_regs['bs_l']
         bs_a = self.manager.misc_regs['bs_a']
-        src += self.mov(bs_a, 'bs')
-        src += self.idiv(bs, t, 32*split)
-        src += self.imul(bs, bs, n)
-        src += self.iadd(bs, bs, bs_a)
+        src += bs_a.mov('bs')
+        src += bs.div(t, 32*split)
+        src += bs.mul(bs, n)
+        src += bs.add(bs, bs_a)
 
         return src
 
     def declare_regs(self):
         src = '//Misc registers\n'
         for key in self.manager.misc_regs:
-            rtype = self.manager.misc_regs[key].type
+            rtype = self.manager.misc_regs[key].rtype
             rname = self.manager.misc_regs[key].name
             src += f'.reg .{rtype} {rname};\n'
 
@@ -195,17 +211,24 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
         self.manager.new_misc_reg('lane_id', 's32')
 
     def if_block(self, reg, a, b, op, jp):
-        src = f'setp.{op}.s32 {reg.name}, {a.name}, {b.name};\n'
-        src += self.bra(reg, jp)
+        src = reg.setp(a, b, op)
+        src += reg.bra(reg, jp)
         return src
 
     def if_end(self, jp):
         return self.bra_tgt(jp)
 
     def footer(self):
-        return 'ret;\n'
+        return self.ret()
 
     def generate_mm(self, sm, M, beta, block_dim=None):
+
+        b = self.manager.misc_regs['b']
+        ib = self.manager.misc_regs['ib']
+        ldb = self.manager.misc_regs['ldb']
+        c = self.manager.misc_regs['c']
+        ic = self.manager.misc_regs['ic']
+        ldc = self.manager.misc_regs['ldc']
 
         # Some registers and if block
         self.idx_regs()
@@ -225,9 +248,9 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
                     X_idx.append(i)
 
             if X_idx:
-                X = PTXArrayValue(self.manager, f'f{self.dtype}', 'b', 'ib', 'ldb', X=X_idx)
-                z = PTXArrayValue(self.manager, f'f{self.dtype}', 'c', 'ic', 'ldc', X=[j])
-                Y = [PTXConstant(c, self.dtype) for c in C]
+                X = PTXArrayValue(self.manager, f'f{self.dtype}', b, ib, ldb, X=X_idx)
+                z = PTXArrayValue(self.manager, f'f{self.dtype}', c, ic, ldc, X=[j])
+                Y = [PTXConstant(c, f'f{self.dtype}') for c in C]
 
             src += self.const_dotp(X, Y, z)
 
@@ -241,6 +264,13 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
 
     def generate_mm_split(self, sm, M, beta, block_dim, split, rep, shr_max):
         src = ''
+
+        b = self.manager.misc_regs['b']
+        ib = self.manager.misc_regs['ib']
+        ldb = self.manager.misc_regs['ldb']
+        c = self.manager.misc_regs['c']
+        ic = self.manager.misc_regs['ic']
+        ldc = self.manager.misc_regs['ldc']
 
         # Calculate how much shared is available per gang
         shr_size = int(int(shr_max/self.bsize)/int(block_dim/split))
@@ -258,22 +288,24 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
 
         # Initialise the shared memory 
         self.manager.init_shared('bs', self.bsize, shr_max)
-        S = PTXArrayShared(self.manager, f'f{self.dtype}', 'bs', 'bs_l', shr_size)
+        bs_l = self.manager.misc_regs['bs_l']
+        bs_a = self.manager.misc_regs['bs_a']
+        S = PTXArrayShared(self.manager, f'f{self.dtype}', bs_a, bs_l, shr_size)
 
         # Set predicates for warps
         P = []
         for j, col in enumerate(cols):
             P.append(self.manager.regs[self.manager.new_register('pred')])
-            src += self.setp(P[j], self.manager.misc_regs['warp_id'], j, 'ne')
+            src += P[j].setp(self.manager.misc_regs['warp_id'], j, 'ne')
 
         # Shared load
         curr_tgt = self.manager.new_target()
         for j, col in enumerate(cols):
             src += self.bra_tgt(curr_tgt)
             curr_tgt = self.manager.new_target()
-            src += self.bra(P[j], curr_tgt)
+            src += P[j].bra(curr_tgt)
 
-            X = PTXArrayValue(self.manager, 'f32', 'b', 'ib', 'ldb', X=col)
+            X = PTXArrayValue(self.manager, f'f{self.dtype}', b, ib, ldb, X=col)
             src += X.load_array_to_shared(j, S)
         src += self.bra_tgt(curr_tgt)
 
@@ -285,7 +317,7 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
         for j, row in enumerate(rows):
             src += self.bra_tgt(curr_tgt)
             curr_tgt = self.manager.new_target()
-            src += self.bra(P[j], curr_tgt)
+            src += P[j].bra(curr_tgt)
             src += f'// if(warp == {j})\n'
 
             for r in row:
@@ -297,9 +329,9 @@ mul.wide.s32 ldc, ldc_a, {self.bsize};
                         X_idx.append(i)
 
                 if X_idx:
-                    X = PTXArrayValue(self.manager, f'f{self.dtype}', 'b', 'ib', 'ldb', X=X_idx)
-                    z = PTXArrayValue(self.manager, f'f{self.dtype}', 'c', 'ic', 'ldc', X=[r])
-                    Y = [PTXConstant(c, self.dtype) for c in C]
+                    X = PTXArrayValue(self.manager, f'f{self.dtype}', b, ib, ldb, X=X_idx)
+                    z = PTXArrayValue(self.manager, f'f{self.dtype}', c, ic, ldc, X=[r])
+                    Y = [PTXConstant(c, f'f{self.dtype}') for c in C]
 
                     src += self.const_dotp(X, Y, z, j, S=S)
 
