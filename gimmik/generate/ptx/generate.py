@@ -39,7 +39,7 @@ class GimmikPTXFunction(PTXProvider):
                                 ACC[(i-1)%n_accum])
         
         src += z.address_reg(0, warp)
-        src += self.manager.regs[z.X[0][1]].st_global(ACC[(i-1) % n_accum])
+        src += self.manager.regs[z.X[0][1]].st_global(ACC[(i-1) % n_accum], z.type)
 
         return src
 
@@ -52,11 +52,11 @@ class GimmikPTXFunction(PTXProvider):
         ldb_a = self.manager.misc_regs['ldb_a']
         ldc_a = self.manager.misc_regs['ldc_a']
 
-        src += n.ld_param(f'[{self.name}_param_0]')
-        src += b_a.ld_param(f'[{self.name}_param_1]')
-        src += ldb_a.ld_param(f'[{self.name}_param_2]')
-        src += c_a.ld_param(f'[{self.name}_param_3]')
-        src += ldc_a.ld_param(f'[{self.name}_param_4]')
+        src += n.ld_param(f'{self.name}_param_0')
+        src += b_a.ld_param(f'{self.name}_param_1')
+        src += ldb_a.ld_param(f'{self.name}_param_2')
+        src += c_a.ld_param(f'{self.name}_param_3')
+        src += ldc_a.ld_param(f'{self.name}_param_4')
 
         b = self.manager.misc_regs['b']
         c = self.manager.misc_regs['c']
@@ -89,9 +89,9 @@ class GimmikPTXFunction(PTXProvider):
         nt = self.manager.misc_regs['ntid_x']
         bl = self.manager.misc_regs['ctaid_x']
 
-        src += self.mov(bl, '%ctaid.x')
-        src += self.mov(nt, '%ntid.x')
-        src += self.mov(t, '%tid.x')
+        src += bl.mov('%ctaid.x')
+        src += nt.mov('%ntid.x')
+        src += t.mov('%tid.x')
 
         el = self.manager.misc_regs['el']
         src += el.mad(nt, bl, t)
@@ -127,12 +127,16 @@ class GimmikPTXFunction(PTXProvider):
 
         src += self.init_data_address()
 
-        bs = self.manager.misc_regs['bs_l']
+        bs_l = self.manager.misc_regs['bs_l']
         bs_a = self.manager.misc_regs['bs_a']
+        # bs_l = ((threadIdx.x % 32) + 32*(threadIdx.x/64))*n + bs_a;
+        src += bs_l.div(t, 32*split)
+        src += bs_l.mul(bs_l, 32)
+        src += bs_a.rem(t, 32)
+        src += bs_l.add(bs_l, bs_a)
         src += bs_a.mov('bs')
-        src += bs.div(t, 32*split)
-        src += bs.mul(bs, n)
-        src += bs.add(bs, bs_a)
+        src += bs_l.mul(bs_l, n)
+        src += bs_l.add(bs_l, bs_a)
 
         return src
 
@@ -212,7 +216,7 @@ class GimmikPTXFunction(PTXProvider):
 
     def if_block(self, reg, a, b, op, jp):
         src = reg.setp(a, b, op)
-        src += reg.bra(reg, jp)
+        src += reg.bra(jp)
         return src
 
     def if_end(self, jp):
@@ -223,13 +227,6 @@ class GimmikPTXFunction(PTXProvider):
 
     def generate_mm(self, sm, M, beta, block_dim=None):
 
-        b = self.manager.misc_regs['b']
-        ib = self.manager.misc_regs['ib']
-        ldb = self.manager.misc_regs['ldb']
-        c = self.manager.misc_regs['c']
-        ic = self.manager.misc_regs['ic']
-        ldc = self.manager.misc_regs['ldc']
-
         # Some registers and if block
         self.idx_regs()
         jp = 'RANGE'
@@ -237,6 +234,13 @@ class GimmikPTXFunction(PTXProvider):
                             self.manager.misc_regs['el'],
                             self.manager.misc_regs['n'],
                             op='ge', jp=jp)
+
+        b = self.manager.misc_regs['b']
+        ib = self.manager.misc_regs['ib']
+        ldb = self.manager.misc_regs['ldb']
+        c = self.manager.misc_regs['c']
+        ic = self.manager.misc_regs['ic']
+        ldc = self.manager.misc_regs['ldc']
 
         # Generate main
         for j, jx in enumerate(M):
@@ -265,19 +269,19 @@ class GimmikPTXFunction(PTXProvider):
     def generate_mm_split(self, sm, M, beta, block_dim, split, rep, shr_max):
         src = ''
 
-        b = self.manager.misc_regs['b']
-        ib = self.manager.misc_regs['ib']
-        ldb = self.manager.misc_regs['ldb']
-        c = self.manager.misc_regs['c']
-        ic = self.manager.misc_regs['ic']
-        ldc = self.manager.misc_regs['ldc']
-
         # Calculate how much shared is available per gang
         shr_size = int(int(shr_max/self.bsize)/int(block_dim/split))
         rows, cols = self.row_col_split(M, split, shr_size)
 
         # Allocate the idex registers in the manager
         self.idx_reg_split()
+
+        b = self.manager.misc_regs['b']
+        ib = self.manager.misc_regs['ib']
+        ldb = self.manager.misc_regs['ldb']
+        c = self.manager.misc_regs['c']
+        ic = self.manager.misc_regs['ic']
+        ldc = self.manager.misc_regs['ldc']
 
         # if (i < n)
         jp = 'RANGE'

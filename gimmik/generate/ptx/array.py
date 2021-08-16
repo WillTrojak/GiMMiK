@@ -45,12 +45,12 @@ class PTXArrayShared(PTXProvider):
 
     def write_out(self, v, j, id):
         self.map[id] = j*self.bsize
-        return self.addr_l.st_shared(v, c=j*self.bsize)
+        return self.addr_l.st_shared(v, self.type, c=j*self.bsize)
 
     def write_out_new(self, v, id):
         j = self.new_shared()
         self.map[id] = j*self.bsize
-        return self.addr_l.st_shared(v, c=j*self.bsize)
+        return self.addr_l.st_shared(v, self.type, c=j*self.bsize)
 
 class PTXArrayValue(PTXProvider):
     def __init__(self, manager, type, addr, i, ld, X=None) -> None:

@@ -10,9 +10,10 @@ ${funcn}(int n,
 {
     int i = ${rep*32}*blockIdx.x + (threadIdx.x % 32) + 32*(threadIdx.x/${32*split});
     int warp = (threadIdx.x / 32) % ${split};
-    int osb = (threadIdx.x/${32*split})*${gimmik.ncols(mat)};
+    int osb = ((threadIdx.x % 32) + 32*(threadIdx.x/${32*split}))*${gimmik.ncols(mat)};
     ${dtype} dotp;
-    ${dtype} extern __shared__ bs[];
+    //${dtype} extern __shared__ bs[];
+    ${dtype} __shared__ bs[${int(block_dim/split)*gimmik.ncols(mat)}];
 
     if (i < n)
     {

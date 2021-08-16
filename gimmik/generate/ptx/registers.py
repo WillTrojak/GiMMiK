@@ -9,7 +9,7 @@ from math import log2
 def select_reg(rtype, name, *args, **kwargs):
     return subclass_where(PTXBaseRegister, rtype=rtype.lower())(name, *args, **kwargs)
 
-def value(self, x):
+def value(x):
     if isinstance(x, PTXConstant):
        X = x.val
     elif isinstance(x, PTXBaseRegister):
@@ -29,12 +29,12 @@ class PTXBaseRegister(object):
     @new_line
     def ld(self, a, ss, c=None, cop=None, level=None, vec=None):
         A = value(a)
-        c = [ss, cop, level, vec]
-        config = '.'.join('{x}'.format(x=x) for x in c if x is not None)
+        cfg = [ss, cop, level, vec]
+        config = '.'.join('{x}'.format(x=x) for x in cfg if x is not None)
         if c is not None:
-            return f'ld.{config}.{self.rtype} {self.name}, [{A}]'
-        else:
             return f'ld.{config}.{self.rtype} {self.name}, [{A} + {c}]'
+        else:
+            return f'ld.{config}.{self.rtype} {self.name}, [{A}]'
 
     def ld_global(self, a, c=None, cop=None, level=None, vec=None):
         return self.ld(a, 'global', c, cop, level, vec)
@@ -53,31 +53,32 @@ class PTXBaseRegister(object):
     def mov(self, a, flag=None, c=None):
         A = value(a)
         if flag == 'addr':
-            return f'mov.{self.rtype} [{A}]'
+            return f'mov.{self.rtype} {self.name}, [{A}]'
         elif flag == 'addrc':
-            return f'mov.{self.rtype} [{A} + {c}]'
+            return f'mov.{self.rtype} {self.name}, [{A} + {c}]'
         else:
-            return f'mov.{self.rtype} {A}'
+            return f'mov.{self.rtype} {self.name}, {A}'
 
     @new_line
-    def st(self, s, ss, c=None, cop=None, level=None, vec=None):
+    def st(self, s, ss, type, c=None, cop=None, level=None, vec=None):
         S = value(s)
-        c = [ss, cop, level, vec]
-        config = '.'.join('{x}'.format(x=x) for x in c if x is not None)
+        cfg = [ss, cop, level, vec]
+        config = '.'.join('{x}'.format(x=x) for x in cfg if x is not None)
         if c is not None:
-            return f'st.{config}.{self.rtype} [{self.name} + {c}], {S}'
+            return f'st.{config}.{type} [{self.name} + {c}], {S}'
         else:
-            return f'st.{config}.{self.rtype} [{self.name}], {S}'
+            return f'st.{config}.{type} [{self.name}], {S}'
 
-    def st_global(self, s, c=None, cop=None, level=None, vec=None):
-        return self.st(s, 'global', c, cop, level, vec)
+    def st_global(self, s, type, c=None, cop=None, level=None, vec=None):
+        return self.st(s, 'global', type, c, cop, level, vec)
 
-    def st_shared(self, s, c=None, cop=None, level=None, vec=None):
-        return self.st(s, 'shared', c, cop, level, vec)
+    def st_shared(self, s, type, c=None, cop=None, level=None, vec=None):
+        return self.st(s, 'shared', type, c, cop, level, vec)
 
 
 class PTXPredicateRegister(PTXBaseRegister):
     rtype = "pred"
+    size = None
     
     def __init__(self, name) -> None:
         super().__init__(name)
@@ -90,7 +91,31 @@ class PTXPredicateRegister(PTXBaseRegister):
     def setp(self, a, b, op):
         A = a.name
         B = value(b)
-        return f'setp.{op}.{a.type} {self.name}, {A}, {B}'
+        return f'setp.{op}.{a.rtype} {self.name}, {A}, {B}'
+
+
+class PTXB8Register(PTXBaseRegister):
+    rtype = "b8"
+    size = 8
+
+    def __init__(self, name) -> None:
+        super().__init__(name)
+
+
+class PTXS8Register(PTXBaseRegister):
+    rtype = "s8"
+    size = 8
+
+    def __init__(self, name) -> None:
+        super().__init__(name)
+
+
+class PTXU8Register(PTXBaseRegister):
+    rtype = "u8"
+    size = 8
+
+    def __init__(self, name) -> None:
+        super().__init__(name)
 
 
 class PTXBinRegister(PTXBaseRegister):
@@ -108,22 +133,23 @@ class PTXBinRegister(PTXBaseRegister):
 
 class PTXB16Register(PTXBinRegister):
     rtype = "b16"
+    size = 16
 
     def __init__(self, name) -> None:
         super().__init__(name)
-        self.size = 16
 
 
 class PTXB16Register(PTXBinRegister):
     rtype = "b32"
+    size = 32
 
     def __init__(self, name) -> None:
         super().__init__(name)
-        self.size = 32
 
 
 class PTXB64Register(PTXBinRegister):
     rtype = "b64"
+    size = 64
 
     def __init__(self, name) -> None:
         super().__init__(name)
@@ -369,7 +395,7 @@ class PTXF32Register(PTXFloatRegister):
     def _config(self, rnd=None, ftz=None):
         r = rnd if rnd is not None else self.rnd
         f = 'ftz' if ftz else self.ftz
-        config = '.'.join('{x}'.format(x) for x in [r, f] if x is not None)
+        config = '.'.join('{x}'.format(x=x) for x in [r, f] if x is not None)
 
     def add(self, a, b, rnd=None, ftz=None):
         # self = a + b
@@ -383,7 +409,7 @@ class PTXF32Register(PTXFloatRegister):
         else:
             r = rnd if rnd is not None else self.rnd
         f = 'ftz' if ftz is not None else self.ftz
-        config = '.'.join('{z}'.format(z) for z in [r, x, f] if z is not None)
+        config = '.'.join('{z}'.format(z=z) for z in [r, x, f] if z is not None)
 
         return self._div(a, b, config)
     

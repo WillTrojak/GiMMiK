@@ -18,9 +18,9 @@ class PTXConstant(object):
         assert type in int_types + float_types
 
         if type == 'f32':
-            self.val = self._fp64_to_hexstr(value)
-        elif type == 'f64':
             self.val = self._fp32_to_hexstr(value)
+        elif type == 'f64':
+            self.val = self._fp64_to_hexstr(value)
         elif type in int_types:
             self.val = value
 
