@@ -151,7 +151,7 @@ class PTXIntRegister(PTXBinRegister):
         if isinstance(B, Number) and ((B & (B-1) == 0) and B != 0):
             return self.shr(a, int(log2(B)))
         else:
-                return f'div.{self.rtype} {self.name}, {A}, {B};\n'
+            return f'div.{self.rtype} {self.name}, {A}, {B};\n'
 
     def mad(self, a, b, c, config='lo'):
         # self = a*b + c
@@ -185,7 +185,7 @@ class PTXIntRegister(PTXBinRegister):
             return self.mov(0)
         elif isinstance(A, Number) and isinstance(B, Number):
             C = int(A*B)
-            return self.mof(C)
+            return self.mov(C)
         elif type is not None:
             return f'mul.{config}.{type} {self.name}, {A}, {B};\n'
         else:
@@ -203,11 +203,12 @@ class PTXIntRegister(PTXBinRegister):
                 pass
         return f'rem.{self.rtype} {self.name}, {A}, {B};\n'
 
+    @new_line
     def sub(self, a, b):
         # self = a - b
         A = value(a)
         B = value(b)
-        return f'sub.{self.rtype} {self.name}, {A}, {B};\n'
+        return f'sub.{self.rtype} {self.name}, {A}, {B}'
 
 
 class PTXU16Register(PTXIntRegister):
