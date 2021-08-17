@@ -84,8 +84,11 @@ class PTXPredicateRegister(PTXBaseRegister):
         super().__init__(name)
 
     @new_line
-    def bra(self, tgt):
-        return f'@{self.name} bra {tgt}'
+    def bra(self, tgt, uni=False):
+        if uni:
+            return f'@{self.name} bra.uni {tgt}'
+        else:
+            return f'@{self.name} bra {tgt}'
 
     @new_line
     def setp(self, a, b, op):
