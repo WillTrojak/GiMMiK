@@ -307,7 +307,7 @@ class GimmikPTXFunction(PTXProvider):
         for j, col in enumerate(cols):
             src += self.bra_tgt(curr_tgt)
             curr_tgt = self.manager.new_target()
-            src += P[j].bra(curr_tgt)
+            src += P[j].bra(curr_tgt, uni=True)
 
             X = PTXArrayValue(self.manager, f'f{self.dtype}', b, ib, ldb, X=col)
             src += X.load_array_to_shared(j, S)
@@ -321,7 +321,7 @@ class GimmikPTXFunction(PTXProvider):
         for j, row in enumerate(rows):
             src += self.bra_tgt(curr_tgt)
             curr_tgt = self.manager.new_target()
-            src += P[j].bra(curr_tgt)
+            src += P[j].bra(curr_tgt, uni=True)
             src += f'// if(warp == {j})\n'
 
             for r in row:
@@ -340,9 +340,6 @@ class GimmikPTXFunction(PTXProvider):
                     src += self.const_dotp(X, Y, z, j, S=S)
 
         src += self.bra_tgt(curr_tgt)
-
-        # Synchronise
-        src += self.bar_sync(1)
 
         # Add 'if (i < n)' jump point and finalise
         src += self.if_end(jp)
