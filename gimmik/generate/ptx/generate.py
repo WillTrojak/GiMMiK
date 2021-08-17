@@ -135,7 +135,7 @@ class GimmikPTXFunction(PTXProvider):
         src += bs_a.rem(t, 32)
         src += bs_l.add(bs_l, bs_a)
         src += bs_a.mov('bs')
-        src += bs_l.mul(bs_l, n)
+        src += bs_l.mul(bs_l, n*self.bsize)
         src += bs_l.add(bs_l, bs_a)
 
         return src
@@ -197,8 +197,8 @@ class GimmikPTXFunction(PTXProvider):
 
         self.manager.new_misc_reg('ib', 's64')
         self.manager.new_misc_reg('ic', 's64')
-        self.manager.new_misc_reg('ldb_a', 's32')
-        self.manager.new_misc_reg('ldc_a', 's32')
+        self.manager.new_misc_reg('ldb_a', 'u32')
+        self.manager.new_misc_reg('ldc_a', 'u32')
         self.manager.new_misc_reg('ldb', 's64')
         self.manager.new_misc_reg('ldc', 's64')
 
