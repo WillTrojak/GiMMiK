@@ -73,8 +73,11 @@ class GlobalMemory(BaseMemory):
         return self.point(v, x_const, thread_dim, name, ld)
 
     @new_line
-    def global_write(self, src, dst):
-        return f'{dst} = {src};'
+    def global_write(self, src, dst, sign=None):
+        if sign is None:
+            return f'{dst} = {src};'
+        else:
+            return f'{dst} = {sign}({src});'
 
 class RegisterMemory(object):
     def __init__(self, name, size, rid):

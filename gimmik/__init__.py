@@ -48,6 +48,29 @@ class GimmikConfig:
                        'cuda_tensor_flux10_pipeline': 'c',
                        'cuda_tensor_flux11': 'c',
                        'cuda_tensor_flux12': 'c',
+                       'cuda_S_tensor_flux12': 'c',
+                       'cuda_tensor_flux12_0': 'c',
+                       'cuda_tensor_flux12_1': 'c',
+                       'cuda_tensor_flux12_2': 'c',
+                       'cuda_tensor_flux12_3': 'c',
+                       'cuda_tensor_flux_func': 'c',
+                       'cuda_tensor_epb': 'c',
+                       'cuda_tensor_epb_v': 'c',
+                       'cuda_tensor_epb_vp': 'c',
+                       'cuda_tensor_flux_var': 'c',
+                       'cuda_tensor_flux_var_ss': 'c',
+                       'cuda_tensor_flux_var_ss_da': 'c',
+                       'cuda_tensor_flux_var_ss_da_loop': 'c',
+                       'cuda_tensor_lines_tl': 'c',
+                       'cuda_tensor_lines_25': 'c',
+                       'cuda_tensor_lines_24': 'c',
+                       'cuda_S_tensor_lines_24': 'c',
+                       'cuda_tensor_lines_18': 'c',
+                       'cuda_tensor_lines_15': 'c',
+                       'cuda_S_tensor_lines_15': 'c',
+                       'cuda_tensor_lines_12': 'c',
+                       'cuda_S_tensor_lines_12': 'c',
+                       'cuda_tensor_lines_ur': 'c',
                        'cuda_tensor_single': 'c',
                        'cuda_tfmm_managed': 'c',
                        'ispc': 'c',
@@ -87,8 +110,11 @@ class GimmikConfig:
         
     def cleanup(self, src):
         # Append suffix to handle typing
-        src = re.sub(r'(?=\d*[.eE])(?=\.?\d)\d*\.?\d*(?:[eE][+-]?\d+)?',
+        src = re.sub(r'\b(?=\d*[.eE])(?=\.?\d)\d*\.?\d*(?:[eE][+-]?\d+)?',
                      rf'\g<0>{self.suffix}', src)
+        #src = re.sub(r'(?=[\s\*+\-\/\d]\d*[.eE])?(?=[\s\*+\-\/]?\.?\d)[\s\+\-\*\/]\d*\.?\d*(?:[eE][+-]?\d+)?',
+        #             rf'\g<0>{self.suffix}', src)
+
 
         # Split lines to enforce line length max (needed for F90-F08 ISO)
         if self.maxlen:
@@ -182,15 +208,27 @@ def generate_tfmm(D, ndims, nvars, dtype, block_dim, soasz, platform, flux,
 
     cfg = GimmikConfig(platform, dtype, maxlen)
 
-    opargs = {'shr_bdc': True}
+
+    if platform == 'cuda_tensor_flux12_0' or platform == 'cuda_tensor_flux12_1':
+        opargs = {'shr_bdc': False}
+    else:
+        opargs = {'shr_bdc': True}
+
 
     warp_size = 32
     active_threads = int(block_dim/warp_size)*p*int(warp_size/p)
     elem_warp = int(warp_size/p)
     elem_block = int(block_dim/warp_size)*elem_warp
-    shared_max = p*nvars*active_threads*cfg.bytes + 4*warp_size*elem_block
+
+    if opargs['shr_bdc']:
+        shared_max = p*nvars*active_threads*cfg.bytes + cfg.bytes*warp_size*elem_block
+    else:
+        shared_max = p*nvars*active_threads*cfg.bytes
     ufc_size = shared_max
     block_config = BlockConfig(opargs, p, block_dim, ufc_size, shared_max, cfg.bytes*8, warp_size)
+
+    if shared_max > 3*(2**25):
+        raise ValueError('GiMMiK: shared memory usage exceeds device max')
 
     # Template arguments
     tplargs = {'D': D, 'ndims': ndims, 'p': p, 'nvars': nvars, 
@@ -202,12 +240,115 @@ def generate_tfmm(D, ndims, nvars, dtype, block_dim, soasz, platform, flux,
     tpl = pkgutil.get_data(__name__, f'kernels/{platform}.mako')
     src = Template(tpl).render(**tplargs)
 
+    return cfg.cleanup(src), block_config.shr_size
+
+def generate_tfmm_var(D, ndims, nvars, dtype, block_dim, soasz, platform, vec_width=4,
+                      funcn='gimmik_tfmm', maxlen=None):
+
+    (p, k) = np.shape(D)
+
+    if soasz % vec_width != 0:
+        raise ValueError('GiMMiK: SOASZ is not devisible by 4, required for vector load/store')
+
+    cfg = GimmikConfig(platform, dtype, maxlen)
+
+    opargs = {'shr_bdc': True}
+
+    warp_size = 32
+    block_elem = int(2**int(math.log(int(block_dim/nvars), 2)))
+    print(f'{block_elem} {int(block_elem/vec_width)}')
+    active_threads = block_elem*nvars
+
+    c = {'zeta': 2.5, 'tr': 0.001, 'nu': 3e-4}
+    # Template arguments
+    tplargs = {'D': D, 'ndims': ndims, 'p': p, 'nvars': nvars, 
+               'blk_dim': block_dim, 'soasz': soasz,
+               'dtype': cfg.dtype, 'funcn': funcn,
+               'block_elem': block_elem,
+               'c': c, 'vec_width': vec_width,
+              }
+
+    # Load and render the template
+    tpl = pkgutil.get_data(__name__, f'kernels/{platform}.mako')
+    src = Template(tpl).render(**tplargs)
+
     return cfg.cleanup(src)
+
+def generate_tfmm_epb(D, ndims, nvars, dtype, soasz, platform, shr_max, vec_width=4,
+                      funcn='gimmik_tfmm', maxlen=None):
+
+    (p, k) = np.shape(D)
+
+    if soasz % vec_width != 0:
+        raise ValueError('GiMMiK: SOASZ is not devisible by vector width for shr load/store')
+
+    cfg = GimmikConfig(platform, dtype, maxlen)
+
+    nsoln = p**ndims
+    max_elem = int(shr_max/(2*cfg.bytes*nvars*nsoln))
+    block_elem = int(max_elem/vec_width)*vec_width
+    shr_used = 2*block_elem*nvars*nsoln*cfg.bytes
+
+    print(f'line points = {p}, blocks per element = {block_elem}, vector width = {vec_width}')
+
+    c = {'zeta': 2.5, 'tr': 0.001, 'nu': 3e-4}
+    # Template arguments
+    tplargs = {'D': D, 'ndims': ndims, 'p': p, 'nvars': nvars, 
+               'soasz': soasz, 'shr_used': shr_used,
+               'dtype': cfg.dtype, 'funcn': funcn,
+               'block_elem': block_elem,
+               'c': c, 'vec_width': vec_width,
+              }
+
+    # Load and render the template
+    tpl = pkgutil.get_data(__name__, f'kernels/{platform}.mako')
+    src = Template(tpl).render(**tplargs)
+
+    return cfg.cleanup(src)
+
+def generate_tfmm_lines(D, ndims, nvars, dtype, soasz, platform, shr_max,
+                        funcn='gimmik_tfmm', maxlen=None):
+
+    (p, k) = np.shape(D)
+
+    cfg = GimmikConfig(platform, dtype, maxlen)
+
+    nsoln = p**ndims
+    shr_vars = {'cuda_tensor_lines_ur': 24,
+                'cuda_tensor_lines_25': 25,
+                'cuda_tensor_lines_24': 24,
+                'cuda_S_tensor_lines_24': 24,
+                'cuda_tensor_lines_18': 18,
+                'cuda_tensor_lines_15': 15,
+                'cuda_tensor_lines_12': 12,
+                'cuda_S_tensor_lines_12': 12,
+               }
+
+    shr_per_elem = shr_vars[platform]*nsoln*cfg.bytes
+    block_elem = int(shr_max/shr_per_elem)
+    shr_size = block_elem*shr_per_elem
+
+    #print(f'line points = {p}, blocks per element = {block_elem}, SOASZ = {soasz}, shared used = {shr_size}')
+
+    c = {'ac-zeta': 2.5, 'tr': 5e-3, 'nu': 6.25e-4}
+    # Template arguments
+    tplargs = {'D': D, 'ndims': ndims, 'p': p, 'nvars': nvars, 
+               'soasz': soasz, 'shr_size': shr_size,
+               'dtype': cfg.dtype, 'funcn': funcn,
+               'block_elem': block_elem,
+               'c': c,
+              }
+
+    # Load and render the template
+    tpl = pkgutil.get_data(__name__, f'kernels/{platform}.mako')
+    src = Template(tpl).render(**tplargs)
+
+    return cfg.cleanup(src), shr_size
 
 def generate_tfmm_managed(mat, ndims, nvars, dtype, soasz, platform,
                  flux, block_dim, ufc_size, shared_max=None, warp_size=32, 
                  funcn='gimmik_tfmm', maxlen=None, tplargs=None,
-                 opargs=None,
+                 opargs=None, source_term=False
                 ):
 
     if tplargs is None:
@@ -222,7 +363,8 @@ def generate_tfmm_managed(mat, ndims, nvars, dtype, soasz, platform,
 
     # Optimisation and Profiling/Debugging args
     opargs_def = {'ld_opt': True, 'st_opt': False, 'intl_opt': True,
-                  'shr_op_order': 'gsr', 'mem_debug': False, 'shr_bdc': True
+                  'shr_op_order': 'grs', 'mem_debug': False, 'shr_bdc': True,
+                  'pipe_opt': False,
                  }
     opargs_def.update(opargs)
 
@@ -241,7 +383,7 @@ def generate_tfmm_managed(mat, ndims, nvars, dtype, soasz, platform,
         shared_max = shared_max_min
     else:
         if shared_max < shared_max_min:
-            raise ValueError(f'GiMMiK: insufficent shared memory given')
+            raise ValueError(f'GiMMiK: insufficent shared memory given, {shared_max_min}B required')
     block_config = BlockConfig(opargs, p, block_dim, ufc_size, shared_max, cfg.bytes*8, warp_size)
 
     # Setup Memory Space
@@ -254,19 +396,20 @@ def generate_tfmm_managed(mat, ndims, nvars, dtype, soasz, platform,
 
     mem = Planar3dMemoryManger(opargs_def, glb_mem, glb_out_mem, shr_mem, lcly_mem, lclx_mem, acc_reg)
 
-    fargs = {'ndims': ndims, 'ac-zeta': 2.5, 'nu': 1e-3, 'tr': 1e-3, 'a': [1,1,1], 'gamma': 1.4}
+    fargs = {'ndims': ndims, 'ac-zeta': 2.5, 'nu': 6.25e-4, 'tr': 5e-3, 'a': [1,1,1], 'gamma': 1.4}
 
     # Make src
     tplargs.update({'A': A, 'ndims': ndims, 'p': p, 'nvars': nvars, 
                     'bcfg': block_config, 'mem': mem,
                     'soasz': soasz, 'dtype': cfg.dtype,
-                    'flux_n': flux, 'funcn': funcn, 'fargs': fargs, 'opargs': opargs_def})
+                    'flux_n': flux, 'funcn': funcn, 'fargs': fargs, 'opargs': opargs_def,
+                    'source_term': source_term})
 
     tpl = pkgutil.get_data(__name__, f'kernels/{platform}.mako')
     src = Template(tpl).render(**tplargs)
 
     # cleanup and return
-    return cfg.cleanup(src)
+    return cfg.cleanup(src), block_config.shr_size
 
 def _issuported(platform, support, funcn):
     if platform not in support:

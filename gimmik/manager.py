@@ -13,7 +13,7 @@ class BaseManager(object):
         self.glb = [] # glb[0] is input memory, glb[1] is output memory.
 
         self.opargs = {}
-        self.opargs['shr_op_order'] = 'grs'
+        #self.opargs['shr_op_order'] = 'grs'
         self.opargs.update(opargs)
 
 
@@ -90,6 +90,7 @@ class BaseManager(object):
                 source += lcl.copy_to_local(src, dst)
                 if not any(in_shared) and not shr_bypass:
                     source += self.read_to_shared(priority, v, x_const, thread_dim, dst)
+
             elif self.opargs['shr_op_order'] == 'gsr':
                 if not any(in_shared) and not shr_bypass:
                     source += self.read_to_shared(priority, v, x_const, thread_dim, src)

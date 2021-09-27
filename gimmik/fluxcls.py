@@ -11,7 +11,7 @@ class BaseFlux(object):
 
     @safe_src
     def build_flux(self, q, v, jac):
-        mapping, F = self._flux(q, v)
+        mapping, F, s = self._flux(q, v)
 
         src = ''
         for count, i in enumerate(F):
@@ -19,6 +19,15 @@ class BaseFlux(object):
             src = src + f'({jac[i]})*{sub_str}' + ('', '+')[count < len(F)-1]
         self.src = src
 
+        return src
+
+    @safe_src
+    def build_source(self, q, v, jac):
+        mapping, F, s = self._flux(q, v)
+
+        src = ''
+        src = self._substitute(body=s, mapping=mapping)
+        self.src = src
         return src
 
     def _flux(self, q):

@@ -12,7 +12,8 @@
   P (POINTS PER LINE)   = ${p-1} (${p})
   NVARS                 = ${nvars}
   FLUX                  = ${flux_n}
-  
+  SOURCE TERM           = ${source_term}
+
   SOASZ                 = ${soasz}
   WARP SIZE             = ${bcfg.warp_size}
   TOTAL SHARED SIZE (B) = ${bcfg.shr_size}
@@ -24,9 +25,24 @@
   COMPUTE INTERLEAVING  = ${opargs['intl_opt']}
   OP SHR ORDER          = ${opargs['shr_op_order']}
   SHR BANK DE-CONFLICT  = ${opargs['shr_bdc']} 
+  PIPELINNING           = ${opargs['pipe_opt']}
 */
 
-#include <stdio.h>
+//#include <stdio.h>
+
+//#include <cooperative_groups.h>
+//#include <cooperative_groups/memcpy_async.h>
+//#include <cuda/pipeline>
+
+//namespace cg = cooperative_groups;
+
+#define BLOCK_DIMX ${bcfg.blk_dim}
+#define SOA_SZ ${soasz}
+#define SHR_SIZE ${bcfg.shr_size}
+#define ORDER ${p-1}
+#define WTYPE ${dtype}
+#define WARP_SIZE ${bcfg.warp_size}
+#define ELEM_PER_WARP ${bcfg.elem_warp_max}
 
 #define SOA_IDX(i, v) ((((i) / ${soasz})*${nvars} + (v))*${soasz} + (i) % ${soasz})
 
@@ -40,8 +56,6 @@
 
 // Load differentiation chars into memory
     ${matrix.c_register(A=A, name='d')};
-
-__constant__ ${dtype} ze = ${0.};
 
 __global__ void
 __launch_bounds__ (${bcfg.blk_dim})
@@ -74,18 +88,27 @@ ${funcn}(int n,
 % for i in range(mem.n_local):
     ${dtype} ${mem.local[i].name}[${mem.local[i].size}];
 % endfor
-    
+  
+    ${dtype} ze = ${0.};    
+
+    //auto block = cg::this_thread_block();
+    //auto thread = cg::this_thread();
+    //auto warp = cg::tiled_partition<${bcfg.warp_size}>(block);
+    //auto tile1 = cg::tiled_partition<1>(warp);
+    //constexpr size_t stages = 4;
+  
+  //__shared__ cuda::pipeline_shared_state<cuda::thread_scope::thread_scope_block, stages> shared_state;
+  //auto pl = cuda::make_pipeline(block, &shared_state);
 
     // n is now number of elements
     if (eg < n)
     {
         ${gen.plane_method_3d(A=A, p=p, nvars=nvars, ndims=ndims, flux_func=flux_n, 
                               block_config=bcfg, mem=mem, thrd_v=mem.glb[0].thrd_v,
-                              fargs=fargs, opargs=opargs)}
+                              fargs=fargs, opargs=opargs, source_term=source_term)}
     }
 }
 
-#undef SOA_IDX
 #undef ELEM_K
 #undef WARP
 #undef ATHRD

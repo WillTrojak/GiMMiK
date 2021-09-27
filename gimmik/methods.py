@@ -8,7 +8,7 @@ from gimmik.linear import LinearFlux
 from gimmik.manager import BaseManager
 from gimmik.matrix import GimmikMatrix
 from gimmik.memory import GlobalMemory, LocalMemory, SharedMemory
-from gimmik.post import LoadOptimisation, StoreOptimisation, ComputeInterleave
+from gimmik.post import LoadOptimisation, StoreOptimisation, ComputeInterleave#, Pipeline
 from gimmik.utils import new_line, safe_src
 
 def select_flux(func, ndims, fargs):
@@ -57,7 +57,8 @@ class Plane3d(object):
         self.block_config = block_config
 
         self.A = A
-        
+        self.dtype = A.mtype
+
         # Number of point in a line _not_ order
         self.p = p
         
@@ -74,7 +75,7 @@ class Plane3d(object):
         self.ldst_optimised = False
 
 
-    def build_base(self, mem_debug):
+    def build_base(self, mem_debug, source_term):
         source = self.src
 
         nlow = self.mem.share[0].nlow
@@ -134,6 +135,11 @@ class Plane3d(object):
                         mat = self.A.matrix_value(self.thrd_v, i)
                         acc_yz += f'+({mat}*{flux})'
 
+                    if source_term:
+                        idx = yz_plane + self.p*y_line
+                        q = self.mem.variable_map(idx, thread_dim=2)
+                        acc_yz += f'+({self.flux.build_source(q, v, jac)})'
+
                     source += self.mem.accumulate(self.mem.acc_reg, v, acc_yz[1:])
 
                     source += self.mem.glb[1].global_write(self.mem.acc_reg.point(v), 
@@ -145,21 +151,29 @@ class Plane3d(object):
 
         return source
 
-    def build(self, ld_opt=False, st_opt=False, intl_opt=False, mem_debug=False):
-        self.src = self.build_base(mem_debug=True)
+    def build(self, opargs, source_term):
+        self.src = self.build_base(mem_debug=True, source_term=source_term)
 
-        if intl_opt and not self.ldst_optimised:
+        # Post generation optimisations
+
+        # if opargs['pipe_opt']:
+        #     self.pipeline = Pipeline(self.src, self.dtype, max_coag=opargs.get('max_coag', 1),
+        #                              compute_size=opargs.get('compute_size', 16)
+        #                             )
+        #     self.src = self.pipeline.pipeline_opt(shr_name=self.mem.share[0].name, pipeline_contol=False)
+
+        if opargs['intl_opt'] and not self.ldst_optimised:
             self.intl = ComputeInterleave()
             self.src = self.intl.apply(self.src)
-        elif intl_opt and self.ldst_optimised:
+        elif opargs['intl_opt'] and self.ldst_optimised:
             raise ValueError('GiMMIK: Attempted compute interleave optimisation after ldst')
 
-        if ld_opt:
+        if opargs['ld_opt']:
             self.post_ld = LoadOptimisation(self.block_config, self.mem.glb[0].name)
             self.src = self.post_ld.apply(self.src)
             self.ldst_optimised = True
 
-        if st_opt:
+        if opargs['st_opt']:
             self.post_st = StoreOptimisation(self.mem.glb[1].name, None)
             self.src = self.post_st.apply(self.src)
             self.ldst_optimised = True
@@ -169,8 +183,8 @@ class Plane3d(object):
 
     @new_line
     def _add_warp_sync(self):
-        return '__syncwarp(mask);'
-        #return '__syncthreads();'
+        #return '__syncwarp(mask);'
+        return '__syncthreads();'
 
     @new_line
     def _read_x_point(self, x, y, priority):

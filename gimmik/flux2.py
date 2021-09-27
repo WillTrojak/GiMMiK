@@ -24,7 +24,7 @@ class FluxMapping(object):
         self.sub = f'{sep}'.join(i for i in idx[1:])
         self.sub = f'{sep}'+self.sub if self.sub != '' else ''
 
-        self.mapping, self.F = eval(f'{func}(name=name, macro=self.macro, ndims=ndims, v=self.var, sub=self.sub, **kwargs)')
+        self.mapping, self.F, self.s = eval(f'{func}(name=name, macro=self.macro, ndims=ndims, v=self.var, sub=self.sub, **kwargs)')
 
         #if self._map_conflict():
         #    raise ValueError('Gimmik: flux mapping conflict')
@@ -49,8 +49,20 @@ class FluxMapping(object):
 
         return src
 
+    @safe_src
+    def source_term(self):
+        src = ''
+
+        src = self._substitute(body=self.s, mapping=self.mapping)
+        self.src = src
+        return src
 
 def src(context, func, name, jac, ndims, idx, macro=None, sep=',', **kwargs):
     flux_map = FluxMapping(func=func, name=name, macro=macro, jac=jac, ndims=ndims, idx=idx, sep=sep, **kwargs)
 
     return flux_map.build_src()
+
+def source(context, func, name, jac, ndims, idx, macro=None, sep=',', **kwargs):
+    flux_map = FluxMapping(func=func, name=name, macro=macro, jac=jac, ndims=ndims, idx=idx, sep=sep, **kwargs)
+
+    return flux_map.source_term()
