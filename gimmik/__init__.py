@@ -320,6 +320,7 @@ def generate_tfmm_lines(D, ndims, nvars, dtype, soasz, platform, shr_max,
                 'cuda_S_tensor_lines_24': 24,
                 'cuda_tensor_lines_18': 18,
                 'cuda_tensor_lines_15': 15,
+                'cuda_S_tensor_lines_15': 15,
                 'cuda_tensor_lines_12': 12,
                 'cuda_S_tensor_lines_12': 12,
                }
