@@ -17,9 +17,9 @@
     BLOCK CONFIG       = (${block_elem}, ${p}, ${p})
 */
 
-//#include <cooperative_groups.h>
-//#include <cuda/barrier>
-//namespace cg = cooperative_groups;
+#include <cooperative_groups.h>
+#include <cuda/barrier>
+namespace cg = cooperative_groups;
 
 #define SOA_SZ ${soasz}
 #define SOA_IDX(i, v) ((((i) / ${soasz})*${nvars} + (v))*${soasz} + (i) % ${soasz})
@@ -36,7 +36,6 @@
 
 #define SHR_IDX_I(e, v, i, j, k) ((e)%SSOA_SZ + ((i) + (j)*${p} + (k)*${p*p})*SSOA_SZ + (v)*SSOA_SZ*${p*p*p})
 #define ACC_IDX_I(e, v, i, j, k) ((e)%SSOA_SZ + ((i) + (j)*${p} + (k)*${p*p})*SSOA_SZ + (v)*SSOA_SZ*${p*p*p})
-
 
 __constant__ ${dtype} dc[${p*p}] = {${','.join(str(D[i,j]) for j in range(p) for i in range(p))} };
 
@@ -221,9 +220,9 @@ ${funcn}(int n,
         ${dtype}* __restrict__ c, int ldc
        )
 {
-    //using barrier = cuda::barrier<cuda::thread_scope_block>;
-    //__shared__  barrier bar;
-    //auto block = cg::this_thread_block();
+    using barrier = cuda::barrier<cuda::thread_scope_block>;
+    __shared__  barrier bar;
+    auto block = cg::this_thread_block();
 
     extern __shared__ ${dtype} s[];
 
@@ -237,27 +236,26 @@ ${funcn}(int n,
     int eg = blockIdx.x*${block_elem} + el;
 
 
-    //if (block.thread_rank() == 0)
-    //    init(&bar, (min((blockIdx.x+1)*${block_elem}, n) - blockIdx.x*${block_elem})*${p*p});
-    //block.sync();
+    if (block.thread_rank() == 0)
+        init(&bar, (min((blockIdx.x+1)*${block_elem}, n) - blockIdx.x*${block_elem})*${p*p});
+    block.sync();
 
     if(eg < n)
     {
         for(int k=0; k<${p}; k++)
         {
             ${funcn}_import_plane(ti, tj, k, eg, b, ldb, el, s + oss);
-            //bar.arrive_and_wait();
-            __syncthreads();
+            bar.arrive_and_wait();
+            //__syncthreads();
             ${funcn}_x(ti, tj, k, el, s + oss, eg, b, ldb, s + osa);
             ${funcn}_y(ti, tj, k, el, s + oss, eg, b, ldb, s + osa);
         }
-        //bar.arrive_and_wait();
-        __syncthreads();
+        bar.arrive_and_wait();
+        //__syncthreads();
 
         for(int k=0; k<${p}; k++)
             ${funcn}_z(ti, tj, k, el, s + oss, s + osa, eg, b, ldb, c, ldc);
     }
-    __syncthreads();
 
   return;
 }
