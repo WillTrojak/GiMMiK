@@ -17,9 +17,9 @@
     BLOCK CONFIG       = (${block_elem}, ${p}, ${p})
 */
 
-#include <cooperative_groups.h>
-#include <cuda/barrier>
-namespace cg = cooperative_groups;
+//#include <cooperative_groups.h>
+//#include <cuda/barrier>
+//namespace cg = cooperative_groups;
 
 #define SOA_SZ ${soasz}
 #define SOA_IDX(i, v) ((((i) / ${soasz})*${nvars} + (v))*${soasz} + (i) % ${soasz})
