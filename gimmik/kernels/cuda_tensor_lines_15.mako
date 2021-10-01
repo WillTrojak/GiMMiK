@@ -220,9 +220,9 @@ ${funcn}(int n,
         ${dtype}* __restrict__ c, int ldc
        )
 {
-    using barrier = cuda::barrier<cuda::thread_scope_block>;
-    __shared__  barrier bar;
-    auto block = cg::this_thread_block();
+    //using barrier = cuda::barrier<cuda::thread_scope_block>;
+    //__shared__  barrier bar;
+    //auto block = cg::this_thread_block();
 
     extern __shared__ ${dtype} s[];
 
@@ -236,25 +236,31 @@ ${funcn}(int n,
     int eg = blockIdx.x*${block_elem} + el;
 
 
-    if (block.thread_rank() == 0)
-        init(&bar, (min((blockIdx.x+1)*${block_elem}, n) - blockIdx.x*${block_elem})*${p*p});
-    block.sync();
+    //if (block.thread_rank() == 0)
+    //    init(&bar, (min((blockIdx.x+1)*${block_elem}, n) - blockIdx.x*${block_elem})*${p*p});
+    //block.sync();
 
     if(eg < n)
     {
         for(int k=0; k<${p}; k++)
         {
             ${funcn}_import_plane(ti, tj, k, eg, b, ldb, el, s + oss);
-            bar.arrive_and_wait();
-            //__syncthreads();
+            //bar.arrive_and_wait();
+            __syncthreads();
             ${funcn}_x(ti, tj, k, el, s + oss, eg, b, ldb, s + osa);
             ${funcn}_y(ti, tj, k, el, s + oss, eg, b, ldb, s + osa);
         }
-        bar.arrive_and_wait();
-        //__syncthreads();
+        //bar.arrive_and_wait();
+        __syncthreads();
 
         for(int k=0; k<${p}; k++)
             ${funcn}_z(ti, tj, k, el, s + oss, s + osa, eg, b, ldb, c, ldc);
+    }
+    else
+    {
+        for (int k=0; k<${p}; k++)
+            __syncthreads();
+        __syncthreads();
     }
 
   return;
