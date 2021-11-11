@@ -317,23 +317,29 @@ class PTXFloatRegister(PTXBaseRegister):
         super().__init__(name)
 
     @new_line
-    def add(a, b, rnd, ftz):
-        pass
-
-    @new_line
-    def div(a, b, rnd, ftx):
-        pass
-
-    @new_line
-    def fma(a, b, c, rnd, ftx):
+    def add(self, a, b, rnd, ftz):
         pass
     
     @new_line
-    def mul(a, b, rnd, ftx):
+    def cvt(self, a, rnd='rn'):
+        r = rnd if rnd is not None else self.rnd
+        assert r is not None
+        return f'cvt.{r}.{self.rtype}.{a.rtype} {self.name}, {a.name}'
+
+    @new_line
+    def div(self, a, b, rnd, ftx):
         pass
 
     @new_line
-    def sub(a, b, rnd, ftx):
+    def fma(self, a, b, c, rnd, ftx):
+        pass
+    
+    @new_line
+    def mul(self, a, b, rnd, ftx):
+        pass
+
+    @new_line
+    def sub(self, a, b, rnd, ftx):
         pass
 
     @new_line
@@ -385,6 +391,105 @@ class PTXFloatRegister(PTXBaseRegister):
             return f'sub.{config}.{self.rtype} {self.name}, {A}, {B}'
 
 
+class PTXFloatHalfRegister(PTXFloatRegister):
+    rtype = None
+    size = None
+
+    def __init__(self, name, rnd='rn', ftz=True, **kwargs) -> None:
+        super().__init__(name)
+        self.rnd = rnd
+        self.ftz = 'ftz' if ftz else ''
+
+    def _config(self, rnd=None, ftz=None):
+        r = rnd if rnd is not None else self.rnd
+        f = 'ftz' if ftz else self.ftz
+        return '.'.join('{x}'.format(x=x) for x in [r, f] if x is not None)
+
+    def add(self, a, b, rnd=None, ftz=None):
+        # self = a + b
+        return self._add(a, b, self._config(rnd, ftz))
+    
+    def fma(self, a, b, c, rnd=None, ftz=None):
+        # self = a * b + c
+        return self._fma(a, b, c, self._config(rnd, ftz))
+
+    def mul(self, a, b, rnd=None, ftz=None):
+        # self = a * b
+        return self._mul(a, b, self._config(rnd, ftz))
+
+    def sub(self, a, b, rnd=None, ftz=None):
+        # self = a - b
+        return self._sub(a, b, self._config(rnd, ftz))
+
+
+class PTXF16Register(PTXFloatHalfRegister):
+    rtype = "f16"
+    size = 16
+
+    def __init__(self, name, rnd='rn', ftz=True, **kwargs) -> None:
+        super().__init__(name)
+        self.rnd = rnd
+        self.ftz = 'ftz' if ftz else ''
+
+
+class PTXBF16Register(PTXFloatHalfRegister):
+    rtype = "bf16"
+    size = 16
+
+    def __init__(self, name, rnd='rn', ftz=True, **kwargs) -> None:
+        super().__init__(name)
+        self.rnd = rnd
+        self.ftz = 'ftz' if ftz else ''
+
+
+class PTXFloatHalfx2Register(PTXFloatHalfRegister):
+    rtype = None
+    size = None
+
+    def __init__(self, name, rnd='rn', ftz=True, **kwargs) -> None:
+        super().__init__(name)
+        self.rnd = rnd
+        self.ftz = 'ftz' if ftz else ''
+
+    @new_line
+    def cvt(self, a, b, rnd='rn'):
+        r = rnd if rnd is not None else self.rnd
+        assert r is not None
+        return f'cvt.{r}.{self.rtype}.{a.rtype} {self.name}, {a.name}, {b.name}'
+
+    @new_line
+    def pack(self, a, b):
+        A = value(a)
+        B = value(b)
+        return f'mov.b32 {self.name}, {{{A}, {B}}}'
+
+    @new_line
+    def unpack(self, a, b):
+        A = value(a)
+        B = value(b)
+        return f'mov.b32 {{{A}, {B}}}, {self.name}'
+
+
+class PTXF16x2Register(PTXFloatHalfx2Register):
+    rtype = "f16x2"
+    size = 32
+
+    def __init__(self, name, rnd='rn', ftz=True, **kwargs) -> None:
+        super().__init__(name)
+        self.rnd = rnd
+        self.ftz = 'ftz' if ftz else ''
+
+
+class PTXBF16x2Register(PTXFloatHalfx2Register):
+    rtype = "bf16x2"
+    size = 32
+
+    def __init__(self, name, rnd='rz', ftz=True, **kwargs) -> None:
+        super().__init__(name)
+        self.rnd = rnd
+        self.ftz = 'ftz' if ftz else ''
+
+
 class PTXF32Register(PTXFloatRegister):
     rtype = "f32"
     size = 32
@@ -398,7 +503,7 @@ class PTXF32Register(PTXFloatRegister):
     def _config(self, rnd=None, ftz=None):
         r = rnd if rnd is not None else self.rnd
         f = 'ftz' if ftz else self.ftz
-        config = '.'.join('{x}'.format(x=x) for x in [r, f] if x is not None)
+        return '.'.join('{x}'.format(x=x) for x in [r, f] if x is not None)
 
     def add(self, a, b, rnd=None, ftz=None):
         # self = a + b
