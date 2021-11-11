@@ -43,6 +43,49 @@ class GimmikPTXFunction(PTXProvider):
 
         return src
 
+    def const_dotp_half(self, X, Y, z, n_accum=1, htype='f16', full_accum=True):
+        src = ''
+        src += X.load_array_half(htype=htype)
+
+        ACC = []
+        ACCH = []
+        for i in range(n_accum):
+            acc = self.manager.new_register(X.type)
+            ACC.append(self.manager.regs[acc])
+
+        src += z.address_reg(0)
+
+        if full_accum:
+            ACCH = []
+            for i in range(n_accum):
+                acc = self.manager.new_register(htype)
+                ACCH.append(self.manager.regs[acc])
+
+            for i, y in enumerate(Y):
+                src += ACCH[i % n_accum].mul(y, self.manager.regs[X.X[i][2]])
+                if i < n_accum:
+                    src += ACC[i % n_accum].mov(ACCH[i % n_accum])
+                else:
+                    src += ACC[i % n_accum].add(ACC[i % n_accum], ACCH[i % n_accum])
+
+            for i in range(n_accum-1):
+                src += ACC[n_accum].add(ACC[n_accum], ACC[i])
+
+            src += self.manager.regs[z.X[0][1]].st_global(ACC[n_accum], z.type)
+        else:
+            for i, y in enumerate(Y):
+                if i == 0:
+                    src += ACC[i % n_accum].mul(y, self.manager.regs[X.X[i][2]])
+                else:
+                    src += ACC[i % n_accum].fma(y, self.manager.regs[X.X[i][2]],
+                                ACC[(i-1)%n_accum])
+
+            accf = self.manager.new_register(X.type)
+            src += accf.cvt(ACC[(i-1) % n_accum])
+            src += self.manager.regs[z.X[0][1]].st_global(accf, z.type)
+
+        return src
+
     def init_data_address(self):
         src = ''
 

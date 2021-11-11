@@ -104,7 +104,8 @@ def generate_mm_split(mat, dtype, platform, block_dim, split, rep=1, alpha=1.0,
 
 
 def generate_mm_ptx(mat, dtype, sm, alpha=1.0, beta=0.0, funcn='gimmik_mm', 
-                    block_dim=None, split=None, rep=None, shr_max=None):
+                    block_dim=None, split=None, rep=None, shr_max=None,
+                    half_int=False):
     
     bytes = {np.float32: 4, np.float64: 8}
 
@@ -119,7 +120,7 @@ def generate_mm_ptx(mat, dtype, sm, alpha=1.0, beta=0.0, funcn='gimmik_mm',
     # Template arguments
     tplargs = {'dtype': dtype, 'mat': mat, 'beta': beta, 'funcn': funcn,
                'sm': sm, 'split': split, 'rep': rep, 'block_dim': block_dim,
-               'shr_max': shr_max}
+               'shr_max': shr_max, 'half_int': half_int}
 
     # Splitting config
     if split is not None and block_dim is None:

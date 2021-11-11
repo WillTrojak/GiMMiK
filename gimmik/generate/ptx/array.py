@@ -53,7 +53,7 @@ class PTXArrayShared(PTXProvider):
         return self.addr_l.st_shared(v, self.type, c=j*self.bsize)
 
 class PTXArrayValue(PTXProvider):
-    def __init__(self, manager, type, addr, i, ld, X=None) -> None:
+    def __init__(self, manager, type, addr, i, ld, X=None, temp=None) -> None:
         super().__init__()
 
         self.manager = manager
@@ -68,6 +68,8 @@ class PTXArrayValue(PTXProvider):
         self.X = []
         for j in X:
             self.X.append((j, None, None))
+
+        self.temp = temp
         
     def load_array(self, warp=None):
         src = ''
@@ -85,6 +87,25 @@ class PTXArrayValue(PTXProvider):
 
                 self.manager.add_loaded(self.addr, self.i, self.X[i][0], self.ld, D, warp)
                 src += D.ld_global(A, cop='nc')
+        return src
+
+    def load_array_half(self, warp=None, htype='f16'):
+        src = ''
+        for i in range(len(self.X)):
+            x = (self.addr, self.i, self.X[i][0], self.ld, warp)
+            if x in self.manager.loaded:
+                j = self.X[i][0]
+                D = self.manager.loaded[x]
+                self.X[i] = (j, None, D.name)
+            else:
+                src += self.address_reg(i, warp, rtype=htype)
+                (j, a, d) = self.X[i]
+                A = self.manager.regs[a]
+                D = self.manager.regs[d]
+
+                self.manager.add_loaded(self.addr, self.i, self.X[i][0], self.ld, D, warp)
+                src += self.temp.ld_global(A, cop='nc')
+                src += D.cvt(self.temp)
         return src
 
     def load_array_to_shared(self, warp, S: PTXArrayShared):
@@ -110,9 +131,10 @@ class PTXArrayValue(PTXProvider):
     def var_id(self, j):
         return (self.addr, self.i, j, self.ld)
 
-    def address_reg(self, i, warp=None):
+    def address_reg(self, i, warp=None, rtype=None):
         (j, a, v) = self.X[i]
-        v = self.manager.new_register(f'f{self.size}')
+        rtype = f'f{self.size}' if rtype is None else rtype
+        v = self.manager.new_register(rtype)
 
         if warp is None:
             Adj = [(self.addr, j-1, None), (self.addr, j, None), (self.addr, j+1, None)]
