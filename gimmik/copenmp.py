@@ -9,4 +9,3 @@ class COpenMPMatMul(MatMul):
 
     def _kernel_generators(self, dtype, dsize):
         yield ('cstream', {}, {})
-
