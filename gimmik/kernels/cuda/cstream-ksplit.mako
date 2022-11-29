@@ -43,7 +43,7 @@ ${kname}(const ${dtype}* __restrict__ b, ${dtype}* __restrict__ c)
       ## Load in any missing parts of B
       % for kx in kbx:
         % if A[j, kx] != 0 and kx not in loaded:
-        bv[${loop.index}] = __ldcg(b + i + ${kx}*ldb); <% loaded.add(kx) %>
+        bv[${loop.index}] = b[i + ${kx}*ldb]; <% loaded.add(kx) %>
         % endif
       % endfor
       % if (dotex := dot(lambda kx: f'bv[{kx}]', A[j, kbx])) != '0.0':
@@ -66,7 +66,7 @@ ${kname}(const ${dtype}* __restrict__ b, ${dtype}* __restrict__ c)
         dotp = cv[${loop.index // ksplit}] + ${' + '.join(f'csub[{i}][{loop.index}][threadIdx.x]'
                                                           for i in range(ksplit - 1))};
         % if beta == 0:
-        __stcg(c + i + ${j}*ldc, dotp);
+        c[i + ${j}*ldc] = dotp;
         % elif beta == 1:
         c[i + ${j}*ldc] += dotp;
         % else:

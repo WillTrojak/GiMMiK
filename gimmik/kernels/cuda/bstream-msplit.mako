@@ -41,7 +41,7 @@ ${kname}(const ${dtype}* __restrict__ b, ${dtype}* __restrict__ c)
     % if loop.first:
       % for kx in bchunks[0]:
         % if loop.index % msplit == cid:
-        bsub[0][${loop.index}][threadIdx.x] = __ldcg(b + i + ${kx}*ldb);
+        bsub[0][${loop.index}][threadIdx.x] = b[i + ${kx}*ldb];
         % endif
       % endfor
         __barrier_sync(0);
@@ -50,7 +50,7 @@ ${kname}(const ${dtype}* __restrict__ b, ${dtype}* __restrict__ c)
     % if not loop.last:
       % for kx in bchunks[bb + 1]:
         % if loop.index % msplit == cid:
-        bsub[${(bb + 1) % 2}][${loop.index}][threadIdx.x] = __ldcg(b + i + ${kx}*ldb);
+        bsub[${(bb + 1) % 2}][${loop.index}][threadIdx.x] = b[i + ${kx}*ldb];
         % endif
       % endfor
     % endif
@@ -78,7 +78,7 @@ ${kname}(const ${dtype}* __restrict__ b, ${dtype}* __restrict__ c)
   ## Handle rows of A which are all zero
   % for j, jx in enumerate(afix):
     % if jx == -1 and j % msplit == cid and beta == 0:
-        __stcg(c + i + ${j}*ldc, make_zero());
+        c[i + ${j}*ldc] = make_zero();
     % elif jx == -1 and j % msplit == cid and beta != 1:
         c[i + ${j}*ldc] *= ${beta};
     % endif
