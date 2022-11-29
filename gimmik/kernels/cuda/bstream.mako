@@ -26,7 +26,7 @@ ${kname}(const ${dtype}* __restrict__ b, ${dtype}* __restrict__ c)
 
 ## Iterare through the used rows of B
 % for kx in bix:
-        bv = __ldcg(b + i + ${kx}*ldb);
+        bv = b[i + ${kx}*ldb];
   % for j, jx in enumerate(A[:, kx]):
     % if jx != 0 and kx == afix[j]:
         csub[${j}] = ${jx}*bv;
@@ -35,7 +35,7 @@ ${kname}(const ${dtype}* __restrict__ b, ${dtype}* __restrict__ c)
     % endif
     ##
     % if kx == alix[j] and beta == 0:
-        __stcg(c + i + ${j}*ldc, csub[${j}]);
+        c[i + ${j}*ldc] = csub[${j}];
     % elif kx == alix[j] and beta == 1:
         c[i + ${j}*ldc] += csub[${j}];
     % elif kx == alix[j]:

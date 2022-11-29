@@ -65,7 +65,7 @@ ${kname}(const ${dtype}* __restrict__ b, ${dtype}* __restrict__ c)
         % endif
         ## If we're done with this dot product then store to global
         % if kx == alix[mcx[j]] and beta == 0:
-        __stcg(c + i + ${mcx[j]}*ldc, csub[${j}]);
+        c[i + ${mcx[j]}*ldc] = csub[${j}];
         % elif kx == alix[mcx[j]] and beta == 1:
         c[i + ${mcx[j]}*ldc] += csub[${j}];
         % elif kx == alix[mcx[j]]:
