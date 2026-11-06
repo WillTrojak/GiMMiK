@@ -1,5 +1,4 @@
 <%inherit file='base'/>
-## Preserve generated PTX spelling to retain existing JIT cache keys.
 <%!
 # The native 4x4 FFMA ordering over a width-2 panel
 ORDER = [(0, 1), (0, 0), (1, 1), (1, 0), (1, 3), (1, 2), (0, 3), (0, 2)]
@@ -7,7 +6,7 @@ ORDER = [(0, 1), (0, 0), (1, 1), (1, 0), (1, 3), (1, 2), (0, 3), (0, 2)]
 
 <%def name="prepare_output()">
 % if not beta_zero and preload_c:
-    // Keep beta*C independent of the dot product until the original epilogue.
+    ## Load C before the dot product
     .reg .f32 oldc_<${mt*nt}>;
     {
         .reg .b32 pc, row, last, oc;
@@ -37,7 +36,7 @@ ORDER = [(0, 1), (0, 0), (1, 1), (1, 0), (1, 3), (1, 2), (0, 3), (0, 2)]
 %  endfor
     }
 % elif not beta_zero and prefetch_c:
-    // Fetch beta*C into L1 while the dot product runs, without extra registers.
+    ## Prefetch C into L1 before epilogue load
     {
         .reg .b32 pc, row;
         .reg .b64 addr;
@@ -91,12 +90,12 @@ ORDER = [(0, 1), (0, 0), (1, 1), (1, 0), (1, 3), (1, 2), (0, 3), (0, 2)]
         .reg .pred zero_chunk;
         and.b32 masked, group_bit, ${hex(mask)};
         setp.ne.u32 zero_chunk, masked, 0;
-        @zero_chunk bra CHUNK_DONE_${kb}_${first};
+        @zero_chunk bra L_CHUNK_DONE_${kb}_${first};
     }
 %  endif
     ${self.compute_range(kb, first, first + 4)}
 %  if mask:
-    CHUNK_DONE_${kb}_${first}:
+    L_CHUNK_DONE_${kb}_${first}:
 %  endif
 % endfor
 </%def>
@@ -147,11 +146,6 @@ ORDER = [(0, 1), (0, 0), (1, 1), (1, 0), (1, 3), (1, 2), (0, 3), (0, 2)]
 % endfor
 </%def>
 
-## Overlap is enabled for the packed SM100 path measured at both N sizes.
-<%
-overlap = (cc == (10, 0) and ffma2 and (mt, nt) == (8, 4)
-           and not (preload_c or prefetch_c) and kpad == kt)
-%>
 .global .align 16 .b32 ${kname}_Ag[${len(a_u32)}] = {${', '.join(a_u32)}};
 .visible .entry ${kname}(
 % if n is None:
@@ -175,12 +169,12 @@ overlap = (cc == (10, 0) and ffma2 and (mt, nt) == (8, 4)
     .reg .b64 ldc64;
 % endif
     .reg .pred leader, done, more, ready;
+
     mov.u32 tid, %tid.x;
 % if kpad == kt:
     and.b32 worker, tid, ${workers - 1};
     shr.u32 group, tid, ${workers.bit_length() - 1};
 % else:
-    // Preserve ptxas scheduling for longer, multi-panel dot products.
     rem.u32 worker, tid, ${workers};
     div.u32 group, tid, ${workers};
 % endif
@@ -201,24 +195,24 @@ overlap = (cc == (10, 0) and ffma2 and (mt, nt) == (8, 4)
     mov.u32 step, %nctaid.x;
     mul.lo.u32 step, step, ${panel};
     setp.ge.u32 done, col, nn;
-    @done bra.uni EXIT;
+    @done bra.uni L_EXIT;
 
     setp.eq.u32 leader, tid, 0;
     @leader mbarrier.init.shared::cta.b64 [barrier], 1;
     @leader fence.proxy.async.shared::cta;
     bar.sync 0;
 
-    @!leader bra INIT_DONE;
+    @!leader bra L_INIT_DONE;
     mov.u64 ag, ${kname}_Ag;
     cvta.to.global.u64 ag, ag;
     mbarrier.arrive.expect_tx.shared::cta.b64 state, [barrier], ${abytes + bbytes};
     cp.async.bulk.shared::cta.global.mbarrier::complete_tx::bytes [sa], [ag], ${abytes}, [barrier];
     cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes [sb], [desc, {col, 0}], [barrier];
-    INIT_DONE:
+    L_INIT_DONE:
     mov.u32 phase, 0;
-    WAIT_INIT:
+    L_WAIT_INIT:
     mbarrier.try_wait.parity.shared::cta.b64 ready, [barrier], phase;
-    @!ready bra.uni WAIT_INIT;
+    @!ready bra.uni L_WAIT_INIT;
     xor.b32 phase, phase, 1;
     bar.sync 0;
 
@@ -240,17 +234,15 @@ overlap = (cc == (10, 0) and ffma2 and (mt, nt) == (8, 4)
 %  endif
 % endfor
     }
-% if width == 2:
 
-% endif
     mov.u32 buff, 0;
-    N_TILE_LOOP:
+    L_N_TILE_LOOP:
     .reg .f32 acc_<${mt*nt}>;
 % for i in range(mt*nt):
     mov.f32 acc_${i}, ${fzero};
 % endfor
     ${self.prepare_output()}
-% for kb in range(kpad//kt):
+% for kb, zero_group in enumerate(zero_groups):
     // Prefetch the following K panel, carrying the pipeline across N tiles.
 %  if (kb + 1)*kt < kpad:
     mov.u32 nextcol, col;
@@ -259,8 +251,9 @@ overlap = (cc == (10, 0) and ffma2 and (mt, nt) == (8, 4)
     add.u32 nextcol, col, step;
     setp.lt.u32 more, nextcol, nn;
 %  endif
-    @!more bra.uni PREFETCH_DONE_${kb};
-    @!leader bra PREFETCH_DONE_${kb};
+
+    @!more bra.uni L_PREFETCH_DONE_${kb};
+    @!leader bra L_PREFETCH_DONE_${kb};
     {
         .reg .b32 dst;
         xor.b32 dst, buff, ${bbytes};
@@ -269,40 +262,46 @@ overlap = (cc == (10, 0) and ffma2 and (mt, nt) == (8, 4)
         cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes
             [dst], [desc, {nextcol, ${(kb + 1)*kt if (kb + 1)*kt < kpad else 0}}], [barrier];
     }
-    PREFETCH_DONE_${kb}:
+    L_PREFETCH_DONE_${kb}:
+
     mad.lo.u32 bp, worker, ${4*width}, sb;
     add.u32 bp, bp, buff;
-%  if zero_groups[kb]:
-    // ${'Skip zero tiles' if width == 2 else 'Elide complete zero operator tiles, as the DMMA templates do.'}
+%  if zero_group:
+    ## Groups with an entirely zero operator panel skip computation
     {
         .reg .pred zero_tile, zg;
         mov.pred zero_tile, 0;
-%   for g in zero_groups[kb]:
+%   for g in zero_group:
         setp.eq.u32 zg, group, ${g};
         or.pred zero_tile, zero_tile, zg;
 %   endfor
-        @zero_tile bra COMPUTE_DONE_${kb};
+        @zero_tile bra L_COMPUTE_DONE_${kb};
     }
 %  endif
+
     ${self.compute_panel(kb)}
-%  if zero_groups[kb]:
-    COMPUTE_DONE_${kb}:
+
+%  if zero_group:
+    L_COMPUTE_DONE_${kb}:
 %  endif
 %  if not overlap:
-    @!more bra.uni WAIT_DONE_${kb};
-    WAIT_${kb}:
+    @!more bra.uni L_WAIT_DONE_${kb};
+    L_WAIT_${kb}:
     mbarrier.try_wait.parity.shared::cta.b64 ready, [barrier], phase;
-    @!ready bra.uni WAIT_${kb};
+    @!ready bra.uni L_WAIT_${kb};
     xor.b32 phase, phase, 1;
-    WAIT_DONE_${kb}:
+
+    L_WAIT_DONE_${kb}:
     bar.sync 0;
     xor.b32 buff, buff, ${bbytes};
 %  endif
 % endfor
+
     {
         .reg .b32 outcol, row;
         .reg .b64 addr;
         .reg .pred valid;
+
 % for r in range(mt):
         mad.lo.u32 row, group, ${mt}, ${r};
 %  for v in range(nt//width):
@@ -324,9 +323,11 @@ overlap = (cc == (10, 0) and ffma2 and (mt, nt) == (8, 4)
             setp.lt.u32 full, oc, nn;
 %   endif
             and.pred full, full, pr;
+
 %   if not beta_zero:
             ${self.add_c(r, v)}
 %   endif
+
             @full st.global.v${width}.f32 [addr], {${', '.join(f'acc_{r*nt + width*v + j}' for j in range(width))}};
 %   if n is None or n % width:
 %    for j in range(width):
@@ -344,24 +345,26 @@ overlap = (cc == (10, 0) and ffma2 and (mt, nt) == (8, 4)
 %  endfor
 % endfor
     }
+
 % if overlap:
     // Finish the stores while the next tile's B panel is in flight.
 <% kb = kpad//kt - 1 %>
-    @!more bra.uni WAIT_DONE_${kb};
-    WAIT_${kb}:
+    @!more bra.uni L_WAIT_DONE_${kb};
+    L_WAIT_${kb}:
     mbarrier.try_wait.parity.shared::cta.b64 ready, [barrier], phase;
-    @!ready bra.uni WAIT_${kb};
+    @!ready bra.uni L_WAIT_${kb};
     xor.b32 phase, phase, 1;
-    WAIT_DONE_${kb}:
+    L_WAIT_DONE_${kb}:
+
     bar.sync 0;
     xor.b32 buff, buff, ${bbytes};
 % endif
     add.u32 col, col, step;
     setp.lt.u32 more, col, nn;
-    @more bra.uni N_TILE_LOOP;
+    @more bra.uni L_N_TILE_LOOP;
 
     bar.sync 0;
     @leader mbarrier.inval.shared::cta.b64 [barrier];
-    EXIT:
+    L_EXIT:
     ret;
 }

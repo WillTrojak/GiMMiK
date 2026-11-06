@@ -198,6 +198,10 @@ class PTXMatMul(MatMul):
                  'zero_groups': [np.flatnonzero(z.all(axis=0)).tolist()
                                  for z in zero.reshape(-1, kt // 4, groups)]}
 
+        # Overlap stores with the next B panel
+        args['overlap'] = (not (args['preload_c'] or args['prefetch_c']) and
+                           args['ffma2'] and (mt, nt) == (8, 4) and kpad == kt)
+
         # The kernel streams B through a tensor map and strides over N
         b_desc = self._b_tensormap(dtype, dsize, panel, kt)
         meta |= {'grid': ({'div': panel*params['iters']}, 1, 1),
